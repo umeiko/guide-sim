@@ -1,0 +1,12 @@
+{
+    "actions": 5,
+    "image_size": [
+        256,
+        256
+    ],
+    "input_dense": 1,
+    "max_steps": 180,
+    "name": "enviroment",
+    "group":"real_x_ray_harder", 
+    "dataset_dir":"./datas"
+}

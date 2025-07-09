@@ -1,0 +1,8 @@
+numpy
+pygame
+pymunk==6.6.0
+opencv-python
+matplotlib
+jupyter
+notebook
+ipykernel

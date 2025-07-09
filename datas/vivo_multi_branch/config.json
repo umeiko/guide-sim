@@ -1,0 +1,16 @@
+{
+    "actions": 5,
+    "image_size": [
+        256,
+        256
+    ],
+    "input_dense": 1,
+    "max_steps": 180,
+    "name": "enviroment",
+    "group":"vivo_multi_branch", 
+    "dataset_dir":"./datas",
+    "step_punishment": 0,
+    "clip_x" : null,
+    "clip_y" : null,
+    "point_scale": 0.5
+}
