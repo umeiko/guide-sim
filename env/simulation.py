@@ -55,8 +55,8 @@ def generate_geometry(surface:pygame.Surface, space,
 class GuideWireEngine:
     def __init__(self):    
         self.space = pymunk.Space()
-        self.handler = self.space.add_default_collision_handler()
-        self.handler.begin = self.coll_begin
+        # self.handler = self.space.add_default_collision_handler()
+        # self.handler.begin = self.coll_begin
         self.done = False  # 是否到达肿瘤
         self.guidwire_fric = 0.5
         self.wall_fric     = 0.3
@@ -76,10 +76,10 @@ class GuideWireEngine:
         generate_geometry(Surf, self.space, sample_rate, threshold, friction)
 
 
-    def coll_begin(self, arbiter, space, data):
-        if (arbiter.shapes[0] in self.goals) or (arbiter.shapes[1] in self.goals):
-            self.done = True
-        return True
+    # def coll_begin(self, arbiter, space, data):
+    #     if (arbiter.shapes[0] in self.goals) or (arbiter.shapes[1] in self.goals):
+    #         self.done = True
+    #     return True
 
     def create_a_ball(self, ball_type="dynamic", mass=1, radius=7, position=(300, 300),
                         elasticity=0.1, friction=0.3, insert=False):        
@@ -89,6 +89,8 @@ class GuideWireEngine:
             body = pymunk.Body(mass, inertia)
         elif ball_type == 'kinematic': 
             body = pymunk.Body(mass, inertia, body_type=pymunk.Body.KINEMATIC)
+        else:
+            raise Exception("ball_type must be dynamic or kinematic")
         body.position = position[0], position[1]
         # 载入形状
         shape = pymunk.Circle(body, radius, (0, 0))
@@ -178,13 +180,16 @@ class GuideWireEngine:
             c = self.create_connect(self.balls[i], self.balls[i+1], 0, 90, gen_angle=direct_angle)
             self.connects.append(c)
 
-    def draw_old_guidewire(self, old_balls, radius=7):
+    def set_guide_by_list(self, old_balls, radius, direct_angle):
         """通过元素列表绘制导丝"""
-        self.create_a_ball(ball_type='kinematic', friction=self.guidwire_fric, radius=radius, position=old_balls[0].body.position.int_tuple)
+        self.clear_guide_wire()
+        self.create_a_ball(ball_type='kinematic', friction=self.guidwire_fric, radius=radius, position=old_balls[0])
         for i in range(len(old_balls)-1):
-            self.create_a_ball(radius=radius, friction=self.guidwire_fric, position=old_balls[i+1].body.position.int_tuple)
-            c = self.create_connect(self.balls[i], self.balls[i+1], 0, 90)
+            self.create_a_ball(radius=radius, friction=self.guidwire_fric, position=old_balls[i+1])
+            c = self.create_connect(self.balls[i], self.balls[i+1], 0, 90, gen_angle=direct_angle)
             self.connects.append(c)
+        for _ in range(3000):
+            self.space.step(1 / 1000)
 
     def bend_guidewire(self, d_angle=10):
         self.angle += d_angle
@@ -242,6 +247,24 @@ class GuideWireEngine:
         for i in self.goals:
             self.space.remove(i)
         self.goals.clear()
+
+    def get_guide_pos_list(self) -> list:
+        return [list(i.body.position) for i in self.balls]
+    
+    def get_guide_tip_pos(self) -> list:
+        return list(self.balls[-1].body.position.int_tuple)[::-1]
+    
+    def clear_guide_wire(self):
+        """删除导丝"""
+        for i in self.balls:
+            self.space.remove(i)
+        for i in self.connects:
+            for j in i:
+                self.space.remove(j)
+        self.balls.clear()
+        self.connects.clear()
+        self.done = False  # 是否到达肿瘤
+        self.angle = 0.0    # 前端的弯曲角度
 
 
         

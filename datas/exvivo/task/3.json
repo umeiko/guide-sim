@@ -1,0 +1,19 @@
+{
+    "mask_path": "label\\1.png",
+    "background_path": "images\\1.png",
+    "target_pos": [
+        314,
+        10
+    ],
+    "direct_pos": [
+        294,
+        93
+    ],
+    "insert_pos": [
+        361,
+        93
+    ],
+    "guide_pos_lst": null,
+    "guide_angle": null,
+    "radius": 4.5
+}
