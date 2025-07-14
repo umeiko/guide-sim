@@ -112,7 +112,17 @@ class SubEnv:
                     out_states.append(state)
                     break     
         return out_states, np.mean(steps), np.mean(rewards)
-    
+
+
+class MultiProcessEnv:
+    """
+    管理多进程环境
+    """
+    def __init__(self, tasks, hyper_params:HyperParams):
+        # tasks中包含N个任务，将其平分为n_proc
+        pass
+
+
 def img_ploter(states:np.ndarray) -> plt.Figure:
     """将状态画成图，用于暂存到tensorboard中"""
     num_figs = 0
@@ -219,10 +229,9 @@ def main():
         # eval
         if (epoch % hyper.plot_interval == 0) and (epoch != 0):
             s, step, r, = se.evaler(agent, transform_norm)
-            fig = img_ploter(s)
             writer.add_scalar('Reward/reward', r, epoch)
             writer.add_scalar('Reward/Spend Steps', step, epoch)
-            writer.add_figure("Last_results", fig,
+            writer.add_figure("Last_results", fig, 
                                 global_step=epoch)
             plt.close(fig)
             if r > best:

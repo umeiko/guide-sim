@@ -329,9 +329,9 @@ class GuidewireEnv():
         """获取导丝尖部坐标"""
         # 防止出界
         pos = self.engine.get_guide_tip_pos()
-        pos[0] = SIMULATION_HIGHT if pos[0] > SIMULATION_HIGHT else pos[0]
+        pos[0] = SIMULATION_HIGHT-1 if pos[0] > SIMULATION_HIGHT else pos[0]
         pos[0] = 0 if pos[0] < 0 else pos[0]
-        pos[1] = SIMULATION_WIDTH if pos[1] > SIMULATION_WIDTH else pos[1]
+        pos[1] = SIMULATION_WIDTH-1 if pos[1] > SIMULATION_WIDTH else pos[1]
         pos[1] = 0 if pos[1] < 0 else pos[1]
         return pos
     
