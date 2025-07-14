@@ -1,2 +1,4 @@
 __pycache__
 datas/train
+logs
+weights

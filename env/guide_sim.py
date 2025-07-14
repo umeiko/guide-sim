@@ -16,9 +16,8 @@ import time
 import pymunk
 import heapq
 from scipy.ndimage import distance_transform_edt
-
+import matplotlib.pyplot as plt
 from env.metadata import GuideSimMetadata, HyperParams
-log_format = "%(asctime)s - %(levelname)s - %(message)s"
 
 logger = logging.getLogger(__name__)
 current_time = time.strftime("%m-%d_%H-%M", time.localtime())
@@ -35,31 +34,12 @@ except ImportError:
             "Failed to import simulation module.")
         raise e
 
-
-console_handler = logging.StreamHandler(stream=sys.stdout)
-console_handler.setLevel(logging.DEBUG)
-# 设置日志格式
-formatter = logging.Formatter('[%(filename)s:%(lineno)d][%(levelname)s] %(message)s')
-console_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
-
-DATASET_PATH = "./datas/exvivo"
-
-# BACKGROUND_PATH = os.path.join(DATASET_PATH, "images")
-# MASKS_PATH = os.path.join(DATASET_PATH, "label")
-# TASK_PATH = os.path.join(DATASET_PATH, "task")
-# MASKS = os.listdir(MASKS_PATH)
-# TASKS = os.listdir(TASK_PATH)
 SIZE = (512, 512)
-def _sortfunc(name:str):
-    return int(name.split(".")[0])
 def _angle_between_points(point1, point2):
     """计算两个点之间的角度"""
     x_diff = point2[0] - point1[0]
     y_diff = point2[1] - point1[1]
     return math.degrees(math.atan2(y_diff, x_diff))
-# MASKS.sort(key=_sortfunc)
-# TASKS.sort(key=_sortfunc)
 
 G_RENDER_WIDTH  = 4
 G_RENDER_RGB  = (43, 43, 43)
@@ -197,14 +177,15 @@ class GuidewireEnv():
         self.draw_options = None
         self.gray = True
 
-    def load_task(self, task_path:str):
+    def load_task(self, task_path:str, file_reload=True):
         """加载任务"""
         self.engine.clear_all()
-        self.metadata.load_from_json(task_path)
-        self.bg_surf = pygame.image.load(
-            os.path.join(self.dataset_path, self.metadata.background_path))
-        self.mask_surf = pygame.image.load(
-            os.path.join(self.dataset_path, self.metadata.mask_path))
+        if file_reload:
+            self.metadata.load_from_json(task_path)
+            self.bg_surf = pygame.image.load(
+                        os.path.join(self.dataset_path, self.metadata.background_path))
+            self.mask_surf = pygame.image.load(
+                        os.path.join(self.dataset_path, self.metadata.mask_path))
         self._mask_surf_np = rgb_to_gray(surf_to_ndarray(self.mask_surf))
         self.bg_surf   = pygame.transform.scale(self.bg_surf, SIZE)
         self.mask_surf = pygame.transform.scale(self.mask_surf, SIZE)
@@ -258,7 +239,7 @@ class GuidewireEnv():
 
         # 导丝以及终点的位置坐标
         reward = self.step_punishment
-        pos_g_tip = self.engine.get_guide_tip_pos()
+        pos_g_tip = self.get_now_tip_pos()
         pos_target = self.get_now_target_pos()
         done = False
         if l2_is_done(pos_g_tip, pos_target, 4 * self.metadata.radius):
@@ -268,14 +249,14 @@ class GuidewireEnv():
             if self.now_step >= self.hyper_params.max_steps:
                 done = True
                 self.a_star_path_np = a_star(self._mask_surf_np,
-                                             pos_g_tip, 
-                                             pos_target)
+                                            pos_g_tip, 
+                                            pos_target)
                 reward = -math.log( a_star_distance(
                                     self.a_star_path_np
                                     ) * 0.001 )
-        
+    
         s = self.render()
-        s = np.array(s, dtype=np.float32) / 255.
+        # s = np.array(s, dtype=np.float32) / 255.
 
         return s, reward, done, (pos_g_tip, pos_target, self.now_step)
 
@@ -324,7 +305,7 @@ class GuidewireEnv():
     
     def reset(self)->np.ndarray:
         self.engine.clear_all()
-        self.load_task(self.task_path)
+        self.load_task(self.task_path, False)
         self.now_step = 0
         return self.render()
 
@@ -345,7 +326,14 @@ class GuidewireEnv():
             pygame.draw.circle(surface, g_color, points[-1], g_width//2)
 
     def get_now_tip_pos(self) -> list:
-        return self.engine.get_guide_tip_pos()
+        """获取导丝尖部坐标"""
+        # 防止出界
+        pos = self.engine.get_guide_tip_pos()
+        pos[0] = SIMULATION_HIGHT if pos[0] > SIMULATION_HIGHT else pos[0]
+        pos[0] = 0 if pos[0] < 0 else pos[0]
+        pos[1] = SIMULATION_WIDTH if pos[1] > SIMULATION_WIDTH else pos[1]
+        pos[1] = 0 if pos[1] < 0 else pos[1]
+        return pos
     
     def get_now_target_pos(self) -> list:
         """获取目标点坐标"""

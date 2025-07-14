@@ -11,7 +11,7 @@ class BaseMetadata:
         """
         Load metadata from a json file.
         """
-        logger.info("Loading metadata from %s", json_path)
+        # logger.info("Loading metadata from %s", json_path)
         with open(json_path, "r", encoding='utf-8') as f:
             json_dict = json.load(f)
         for key, value in json_dict.items():
@@ -65,6 +65,25 @@ class HyperParams(BaseMetadata):
     """
     def __init__(self):
         super().__init__()
+        # env_hyper
         self.max_steps = 80
         self.step_punishment = 0
         self.img_size = [256, 256]
+        # PPO_hyper
+        self.batch_size = 5
+        self.beta = 0.02
+        self.lr = 0.000001
+        self.gamma = 0.98
+        self.lambda_ = 0.99
+        self.optim_type = "adam"
+        self.num_epochs = 1000
+        self.epsilon = 0.2
+        self.device = "cuda:0"
+        self.c_coef = 1.0
+        self.exp_reuse_rate = 10
+        # trainer_hyper
+        self.plot_interval = 10
+        self.save_interval = 50
+        self.num_processes = 10
+        self.task_name = "task_vit"
+
