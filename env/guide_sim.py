@@ -195,8 +195,14 @@ class GuidewireEnv():
     def load_task(self, task_path:str, file_reload=True):
         """加载任务"""
         self.engine.clear_all()
+        
         if file_reload:
             self.metadata.load_from_json(task_path)
+            # Win和Linux的兼容性考虑
+            self.metadata.background_path = \
+                self.metadata.background_path.replace("\\", "/")
+            self.metadata.mask_path = \
+                self.metadata.mask_path.replace("\\", "/")
             self.bg_surf = pygame.image.load(
                         os.path.join(self.dataset_path, self.metadata.background_path))
             self.mask_surf = pygame.image.load(

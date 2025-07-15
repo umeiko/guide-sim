@@ -126,8 +126,12 @@ def img_ploter(states:np.ndarray) -> plt.Figure:
     now_row = 0
     for i, state in enumerate(states):
         # 每5个子图后换行
-        axs[now_row, i%5].imshow(state[0], cmap="gray")
-        axs[now_row, i%5].axis('off')
+        if num_rows == 1:
+            axs[i%5].imshow(state[0], cmap="gray")
+            axs[i%5].axis('off')
+        else:
+            axs[now_row, i%5].imshow(state[0], cmap="gray")
+            axs[now_row, i%5].axis('off')
         if i%5 == 4:
             now_row += 1
     return fig
