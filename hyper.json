@@ -17,7 +17,7 @@
     "c_coef": 1.0,
     "exp_reuse_rate": 10,
     "plot_interval": 10,
-    "save_interval": 50,
+    "save_interval": 10,
     "num_processes": 10,
     "task_name": "task_vit"
 }

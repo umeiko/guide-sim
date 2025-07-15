@@ -2,3 +2,4 @@ __pycache__
 datas/train
 logs
 weights
+supervised_datas

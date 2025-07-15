@@ -52,6 +52,12 @@ MAX_NODES = 100
 def rgb_to_gray(rgb:np.ndarray)->np.ndarray:
     return np.array(cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY))
 
+def gray_to_rgb(gray:np.ndarray)->np.ndarray:
+    if gray.shape[0] <= 3:
+        gray = gray.swapaxes(0, 2)
+        gray = gray.swapaxes(0, 1)
+    return np.array(cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB))
+
 def l2_distance_square(point1, point2):
     """
     没有开根的欧氏距离 (为了优化计算速度)
@@ -138,6 +144,15 @@ def surf_to_ndarray(surf:pygame.Surface, alpha=False):
 
 
 def ndarray_to_surf(ndarray:np.ndarray):
+    conv_img = pygame.surfarray.make_surface(ndarray[:,:,:3])
+    # conv_img.set_alpha(pygame.surfarray.)
+    conv_img = pygame.transform.rotate(conv_img, 90)
+    return pygame.transform.flip(conv_img,False,True)
+
+def ndarray_gray_to_surf(ndarray:np.ndarray):
+    ndarray = gray_to_rgb(ndarray)
+    if ndarray.shape[0] <= 3:
+        ndarray = ndarray.swapaxes(0, 2)
     conv_img = pygame.surfarray.make_surface(ndarray[:,:,:3])
     # conv_img.set_alpha(pygame.surfarray.)
     conv_img = pygame.transform.rotate(conv_img, 90)

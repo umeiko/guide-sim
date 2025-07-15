@@ -213,8 +213,8 @@ def main():
             writer.add_scalar('Loss/critic', losses[1], epoch)
             writer.add_scalar('Loss/entropy', losses[2], epoch)
             writer.add_scalar('Loss/all', losses[3], epoch)
-            logging.info("[loss] actor: %.2f, critic: %.2f, entropy: %.2f, all: %.2f",
-                         losses[0], losses[1], losses[2], losses[3])
+            logging.info("[loss] [%d] actor: %.2f, critic: %.2f, entropy: %.2f, all: %.2f",
+                        epoch, losses[0], losses[1], losses[2], losses[3])
 
         # eval
         if (epoch % hyper.plot_interval == 0) and (epoch != 0):
@@ -227,7 +227,7 @@ def main():
             plt.close(fig)
             if r > best:
                 best = r
-                agent.save(os.path.join(weight_path, f"best.pth"), epoch)
+                agent.save(epoch, os.path.join(weight_path, f"best.pth"))
                 logging.info(
                     f"save best weight in {os.path.join(weight_path, f'best.pth')} with {epoch} epoches")
             logging.info(f"[eval] of episode :{epoch}, score : {r}, steps :{step}")
@@ -240,4 +240,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import traceback
+    try:
+        main()
+    except Exception as e:
+        logging.error(traceback.format_exc())

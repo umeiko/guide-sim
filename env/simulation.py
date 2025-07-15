@@ -50,6 +50,28 @@ def generate_geometry(surface:pygame.Surface, space,
             shape.color = pygame.Color("red")
             shape.generated = True
             space.add(shape)
+    # 再生成 512 x 512 的边框
+    shape = pymunk.Segment(space.static_body, (0, 0), (size_background[0]-1, 0), 1)
+    shape.friction = friction
+    shape.color = pygame.Color("red")
+    shape.generated = True
+    space.add(shape)
+    shape = pymunk.Segment(space.static_body, (0, 0), (0, size_background[1]-1), 1)
+    shape.friction = friction
+    shape.color = pygame.Color("red")
+    shape.generated = True
+    space.add(shape)
+    shape = pymunk.Segment(space.static_body, (size_background[0]-1, 0), (size_background[0]-1, size_background[1]-1), 1)
+    shape.friction = friction
+    shape.color = pygame.Color("red")
+    shape.generated = True
+    space.add(shape)
+    shape = pymunk.Segment(space.static_body, (0, size_background[1]-1), (size_background[0]-1, size_background[1]-1), 1)
+    shape.friction = friction
+    shape.color = pygame.Color("red")
+    shape.generated = True
+    space.add(shape)
+
 
 
 class GuideWireEngine:
