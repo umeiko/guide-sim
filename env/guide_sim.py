@@ -129,7 +129,8 @@ def a_star_distance(a_star_path:np.ndarray):
     """
     if len(a_star_path.shape) > 2:
         raise ValueError(f"a_star_path should be a 2D array, got {a_star_path.shape}")
-    return np.sum(a_star_path)
+    
+    return int(np.sum(a_star_path))
 
 def surf_to_ndarray(surf:pygame.Surface, alpha=False):
     """pygame image to cv2 form image"""
@@ -192,6 +193,9 @@ class GuidewireEnv():
         self.draw_options = None
         self.gray = True
 
+        self.last_a_star = None
+        self.inial_a_star = None
+
     def load_task(self, task_path:str, file_reload=True):
         """加载任务"""
         self.engine.clear_all()
@@ -207,10 +211,10 @@ class GuidewireEnv():
                         os.path.join(self.dataset_path, self.metadata.background_path))
             self.mask_surf = pygame.image.load(
                         os.path.join(self.dataset_path, self.metadata.mask_path))
-        self._mask_surf_np = rgb_to_gray(surf_to_ndarray(self.mask_surf))
-        self.bg_surf   = pygame.transform.scale(self.bg_surf, SIZE)
-        self.mask_surf = pygame.transform.scale(self.mask_surf, SIZE)
-        
+            self._mask_surf_np = rgb_to_gray(surf_to_ndarray(self.mask_surf))
+            self.bg_surf   = pygame.transform.scale(self.bg_surf, SIZE)
+            self.mask_surf = pygame.transform.scale(self.mask_surf, SIZE)
+
         self.engine.draw_walls_by_mask(self.mask_surf, friction=0.1)
         if self.metadata.guide_pos_lst is None:
             self.create_base_guide()
@@ -220,6 +224,7 @@ class GuidewireEnv():
             self.engine.set_guide_by_list(self.metadata.guide_pos_lst,
                                           self.metadata.radius,
                                           self._angle)
+
     def create_base_guide(self):
         """创建基础导丝"""
         if self.metadata.insert_pos is not None and \
@@ -259,23 +264,29 @@ class GuidewireEnv():
             self.engine.space.step(1 / exact)
 
         # 导丝以及终点的位置坐标
-        reward = self.step_punishment
         pos_g_tip = self.get_now_tip_pos()
         pos_target = self.get_now_target_pos()
         done = False
+        now_dis = self.get_a_star_distance()  # self.a_star_path_np也会被更新
         if l2_is_done(pos_g_tip, pos_target, 4 * self.metadata.radius):
             done = True
-            reward = -math.log( l2_distance_square(pos_g_tip, pos_target) ** 0.5 * 0.001)
+            now_dis = 4 * self.metadata.radius
+            # reward = -math.log( l2_distance_square(pos_g_tip, pos_target) ** 0.5 * 0.001)
+            # 成功到达终点之后的稀疏奖励
+            # reward = -math.log( ( 4 * self.metadata.radius / self.inial_a_star)  * 0.05 + 0.0001)
+            reward = math.log(self.inial_a_star / ( now_dis**2 / self.inial_a_star + 1e-5) )
         else:
+            # 没有到达终点，但是已经超出了最大步数限制
             if self.now_step >= self.hyper_params.max_steps:
                 done = True
-                self.a_star_path_np = a_star(self._mask_surf_np,
-                                            pos_g_tip, 
-                                            pos_target)
-                reward = -math.log( a_star_distance(
-                                    self.a_star_path_np
-                                    ) * 0.001 )
-    
+                # 没有到达终点的最终稀疏奖励，使用最终距离
+                reward = math.log(self.inial_a_star / ( now_dis**2 / self.inial_a_star + 1e-5) )
+            else:
+                # 使用A*距离的差值作为密集奖励
+                reward = (self.last_a_star - now_dis) * 10. / self.inial_a_star
+                reward = reward * 1.25 if reward < 0. else reward   # 远离终点时，会有额外的惩罚
+
+        self.last_a_star = now_dis
         s = self.render()
         # s = np.array(s, dtype=np.float32) / 255.
 
@@ -286,6 +297,14 @@ class GuidewireEnv():
                                 self.engine.get_guide_tip_pos(),
                                 self.metadata.target_pos)
         return a_star_path_np
+
+    def get_a_star_distance(self):
+        pos_g_tip = self.get_now_tip_pos()
+        pos_target = self.get_now_target_pos()
+        self.a_star_path_np = a_star(self._mask_surf_np,
+                            pos_g_tip,
+                            pos_target)
+        return a_star_distance(self.a_star_path_np)
 
     def render(self, _return_array=True)->np.ndarray:
         # 绘制导丝
@@ -325,9 +344,13 @@ class GuidewireEnv():
         return f"Metadata:\n{self.metadata}\nHyperParams:\n{self.hyper_params}"
     
     def reset(self)->np.ndarray:
-        self.engine.clear_all()
+        # self.engine.clear_all()
+        del self.engine
+        self.engine = simulation.GuideWireEngine()
         self.load_task(self.task_path, False)
         self.now_step = 0
+        self.last_a_star = self.get_a_star_distance()
+        self.inial_a_star = self.last_a_star
         return self.render()
 
     def close(self)->None:

@@ -12,6 +12,7 @@ import os
 from tqdm import tqdm
 import logging
 import time
+import queue
 
 # 日志模块初始化
 log_format = "[%(filename)s:%(lineno)d][%(levelname)s] %(message)s"
@@ -35,6 +36,8 @@ class SubEnv:
         self.last_states = []
         self.episode_buffer = [ReplayData() for _ in range(len(tasks))]
         self.replay_buffer = ExperimentReplayBuffer()
+        # 记录每个任务成功率，降低已经能够完成的任务的出现频率
+        self.success_rate= [0 for _ in range(len(tasks))]
 
     # 重启环境
     def reset(self, transfrom: transforms.Compose) -> np.ndarray:
@@ -201,12 +204,14 @@ def main():
     losses = None
     best = r
     for epoch in tqdm(range(last_epo, last_epo+hyper.num_epochs)):
-        for _ in range(hyper.max_steps):
+        start_time = time.time()
+        for _ in tqdm(range(hyper.max_steps)):
             batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = agent.batch_desision(states)
             batch_a = batch_a_tensor.squeeze(1).tolist()
             batch_p = batch_p_tensor.squeeze(1).tolist()
             batch_v = batch_v_tensor.squeeze(1).tolist()
             states = se.step(batch_a, batch_p, batch_v, transform_domain)
+        logging.info(f"Collected {len(se.replay_buffer)} datas in buffer, cost {time.time()-start_time:.3f} s")
         if len(se.replay_buffer) >= hyper.batch_size:
             losses = agent.learn(se.replay_buffer)
             se.replay_buffer.clear()

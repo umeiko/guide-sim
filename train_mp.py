@@ -112,17 +112,7 @@ class SubEnv:
                     out_states.append(state)
                     break     
         return out_states, np.mean(steps), np.mean(rewards)
-
-
-class MultiProcessEnv:
-    """
-    管理多进程环境
-    """
-    def __init__(self, tasks, hyper_params:HyperParams):
-        # tasks中包含N个任务，将其平分为n_proc
-        pass
-
-
+    
 def img_ploter(states:np.ndarray) -> plt.Figure:
     """将状态画成图，用于暂存到tensorboard中"""
     num_figs = 0
@@ -136,8 +126,12 @@ def img_ploter(states:np.ndarray) -> plt.Figure:
     now_row = 0
     for i, state in enumerate(states):
         # 每5个子图后换行
-        axs[now_row, i%5].imshow(state[0], cmap="gray")
-        axs[now_row, i%5].axis('off')
+        if num_rows == 1:
+            axs[i%5].imshow(state[0], cmap="gray")
+            axs[i%5].axis('off')
+        else:
+            axs[now_row, i%5].imshow(state[0], cmap="gray")
+            axs[now_row, i%5].axis('off')
         if i%5 == 4:
             now_row += 1
     return fig
@@ -207,12 +201,14 @@ def main():
     losses = None
     best = r
     for epoch in tqdm(range(last_epo, last_epo+hyper.num_epochs)):
+        start_time = time.time()
         for _ in range(hyper.max_steps):
             batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = agent.batch_desision(states)
             batch_a = batch_a_tensor.squeeze(1).tolist()
             batch_p = batch_p_tensor.squeeze(1).tolist()
             batch_v = batch_v_tensor.squeeze(1).tolist()
             states = se.step(batch_a, batch_p, batch_v, transform_domain)
+        logging.info(f"Collected {len(se.replay_buffer)} datas in buffer, cost {time.time()-start_time:.3f} s")
         if len(se.replay_buffer) >= hyper.batch_size:
             losses = agent.learn(se.replay_buffer)
             se.replay_buffer.clear()
@@ -223,20 +219,21 @@ def main():
             writer.add_scalar('Loss/critic', losses[1], epoch)
             writer.add_scalar('Loss/entropy', losses[2], epoch)
             writer.add_scalar('Loss/all', losses[3], epoch)
-            logging.info("[loss] actor: %.2f, critic: %.2f, entropy: %.2f, all: %.2f",
-                         losses[0], losses[1], losses[2], losses[3])
+            logging.info("[loss] [%d] actor: %.2f, critic: %.2f, entropy: %.2f, all: %.2f",
+                        epoch, losses[0], losses[1], losses[2], losses[3])
 
         # eval
         if (epoch % hyper.plot_interval == 0) and (epoch != 0):
             s, step, r, = se.evaler(agent, transform_norm)
+            fig = img_ploter(s)
             writer.add_scalar('Reward/reward', r, epoch)
             writer.add_scalar('Reward/Spend Steps', step, epoch)
-            writer.add_figure("Last_results", fig, 
+            writer.add_figure("Last_results", fig,
                                 global_step=epoch)
             plt.close(fig)
             if r > best:
                 best = r
-                agent.save(os.path.join(weight_path, f"best.pth"), epoch)
+                agent.save(epoch, os.path.join(weight_path, f"best.pth"))
                 logging.info(
                     f"save best weight in {os.path.join(weight_path, f'best.pth')} with {epoch} epoches")
             logging.info(f"[eval] of episode :{epoch}, score : {r}, steps :{step}")
@@ -249,4 +246,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import traceback
+    try:
+        main()
+    except Exception as e:
+        logging.error(traceback.format_exc())

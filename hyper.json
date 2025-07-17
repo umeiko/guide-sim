@@ -5,7 +5,7 @@
         256,
         256
     ],
-    "batch_size": 5,
+    "batch_size": 16,
     "beta": 0.02,
     "lr": 1e-06,
     "gamma": 0.98,
@@ -19,5 +19,7 @@
     "plot_interval": 10,
     "save_interval": 10,
     "num_processes": 10,
-    "task_name": "task_vit"
+    "task_name": "task_vit_reward_10",
+    "A*DenseReward" : false,
+    "L2DenseReward" : true
 }
