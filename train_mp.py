@@ -12,6 +12,8 @@ import os
 from tqdm import tqdm
 import logging
 import time
+import torch.multiprocessing as mp
+import queue
 
 # 日志模块初始化
 log_format = "[%(filename)s:%(lineno)d][%(levelname)s] %(message)s"
@@ -35,6 +37,8 @@ class SubEnv:
         self.last_states = []
         self.episode_buffer = [ReplayData() for _ in range(len(tasks))]
         self.replay_buffer = ExperimentReplayBuffer()
+        # 记录每个任务成功率，降低已经能够完成的任务的出现频率
+        self.success_rate= [0 for _ in range(len(tasks))]
 
     # 重启环境
     def reset(self, transfrom: transforms.Compose) -> np.ndarray:
@@ -112,7 +116,43 @@ class SubEnv:
                     out_states.append(state)
                     break     
         return out_states, np.mean(steps), np.mean(rewards)
+
+class SubEnvMP():
+    def __init__(self,
+                tasks_lst:list, 
+                num_process:int,
+                #  hyper_params:HyperParams,
+                #  train_transform: transforms.Compose,
+                #  eval_transform: transforms.Compose
+                 ):
+        assert len(tasks_lst) > num_process, "任务数量少于进程数量"
+        self.tasks_per_process = []
+        for i in range(num_process):
+            # 将任务列表 tasks_lst 按照进程数 num_process 进行分割
+            # tasks_lst[i::num_process] 表示从索引 i 开始，每隔 num_process 个元素取一个元素
+            # 例如，如果 tasks_lst = [1, 2, 3, 4, 5, 6, 7, 8] 且 num_process = 3
+            # 则 tasks_lst[0::3] = [1, 4, 7]
+            #      tasks_lst[1::3] = [2, 5, 8]
+            #      tasks_lst[2::3] = [3, 6]
+            # 将分割后的任务列表添加到 self.tasks_per_process 中
+            self.tasks_per_process.append(tasks_lst[i::num_process])
+
+        self.pipe_main2sub = [mp.Pipe() for _ in range(num_process)]
+        self.pipe_sub2main = [mp.Pipe() for _ in range(num_process)]
+
+        
+    def step(acts:list[int], 
+             probs:list[float],
+             values:list[float],):
+        ...
     
+    def evel(agent:Agent,
+             
+             ):
+        ...
+
+
+
 def img_ploter(states:np.ndarray) -> plt.Figure:
     """将状态画成图，用于暂存到tensorboard中"""
     num_figs = 0
@@ -202,7 +242,7 @@ def main():
     best = r
     for epoch in tqdm(range(last_epo, last_epo+hyper.num_epochs)):
         start_time = time.time()
-        for _ in range(hyper.max_steps):
+        for _ in tqdm(range(hyper.max_steps)):
             batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = agent.batch_desision(states)
             batch_a = batch_a_tensor.squeeze(1).tolist()
             batch_p = batch_p_tensor.squeeze(1).tolist()
@@ -246,8 +286,5 @@ def main():
 
 
 if __name__ == "__main__":
-    import traceback
-    try:
-        main()
-    except Exception as e:
-        logging.error(traceback.format_exc())
+    semp = SubEnvMP([i for i in range(27)], 3)
+    print(semp.tasks_per_process)

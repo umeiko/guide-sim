@@ -1,6 +1,12 @@
+
+import numpy as np
+# import collections
+# import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+# import torchvision
+from torchvision import models
 from vit_pytorch import ViT
 
 def replace_bn_with_identity(module:nn.Module):
@@ -15,21 +21,28 @@ def replace_bn_with_identity(module:nn.Module):
 
 def initialize_weights(module:nn.modules):
     # 遍历当前模块的所有子模块
-    for name, child in module.named_children(): 
-        # 如果是 BN 层，则替换为 Identity 
-        if isinstance(child, nn.Conv2d) or isinstance(child, nn.Linear):
-            # nn.init.orthogonal_(module.weight, nn.init.calculate_gain('relu'))
-            nn.init.xavier_uniform_(child.weight)
-            # nn.init.kaiming_uniform_(module.weight)
-            if child.bias is not None:
-                nn.init.constant_(child.bias, 0)
-        else:
-            replace_bn_with_identity(child)
+        for name, child in module.named_children(): 
+            # 如果是 BN 层，则替换为 Identity 
+            if isinstance(child, nn.Conv2d) or isinstance(child, nn.Linear):
+                # nn.init.orthogonal_(module.weight, nn.init.calculate_gain('relu'))
+                nn.init.xavier_uniform_(child.weight)
+                # nn.init.kaiming_uniform_(module.weight)
+                if child.bias is not None:
+                    nn.init.constant_(child.bias, 0)
+            else:
+                replace_bn_with_identity(child)
 
-class VIT3_FC(nn.Module):
+class Hybrid_RESNET18_VIT3_FC(nn.Module):
     def __init__(self, input_channels=1, act_num=5, use_softmax=True):
         super().__init__()
         self.input_shape = (input_channels, 256, 256)
+        # resnet18构造
+        self.resnet18 = models.resnet18(weights=None) 
+        replace_bn_with_identity(self.resnet18)
+        self.resnet18.conv1  = nn.Conv2d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.resnet18.fc  = nn.Identity()  # 使用 Identity 替代 fc 层
+        self.use_softmax = use_softmax
+        # VIT 构造
         self.vit = ViT(
                 image_size = 256,
                 channels = input_channels,
@@ -42,11 +55,11 @@ class VIT3_FC(nn.Module):
                 dropout = 0.1,
                 emb_dropout = 0.1
             )
-        self.vit.mlp_head = nn.Identity()
+        self.vit.mlp_head = nn.Linear(1024, 512)
         self.use_softmax = use_softmax
-        self.cov_out = nn.Sequential(
-            nn.Linear(1024, 1024),
-        )
+        
+        self.hybrid_linear = nn.Linear(1024, 1024)
+        
         self.critic_linear = nn.Linear(1024, 1)
         self.actor_linear = nn.Linear(1024, act_num)
         initialize_weights(self)
@@ -55,8 +68,14 @@ class VIT3_FC(nn.Module):
         for k, shape in enumerate(self.input_shape):
             if x.shape[k+1] != shape:
                 raise ValueError(f"Input shape should be {self.input_shape}, got {x.shape[1:]}")
-        x = self.vit(x)
-        x = F.relu(self.cov_out(x))
+        # [b, 512]
+        x1 = self.resnet18(x)
+        # [b, 512]
+        x2 = self.vit(x)
+        # [b, 1024]
+        x = torch.cat([x1, x2], dim=1)
+        x = F.relu(self.hybrid_linear(x))
+
         if self.use_softmax:
             a = F.softmax(self.actor_linear(x), dim=1)
         else:
