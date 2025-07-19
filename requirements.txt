@@ -8,3 +8,5 @@ notebook
 ipykernel
 openai
 scipy
+vit_pytorch
+tensorboard

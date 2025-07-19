@@ -119,12 +119,15 @@ class SubEnv:
 
 class SubEnvMP():
     def __init__(self,
-                tasks_lst:list, 
+                tasks_lst:list,
                 num_process:int,
-                #  hyper_params:HyperParams,
-                #  train_transform: transforms.Compose,
-                #  eval_transform: transforms.Compose
+                hyper_params:HyperParams,
+                train_transform: transforms.Compose,
+                eval_transform: transforms.Compose
                  ):
+        self.hyper_params = hyper_params
+        self.train_transform = train_transform
+        self.eval_transform = eval_transform
         assert len(tasks_lst) > num_process, "任务数量少于进程数量"
         self.tasks_per_process = []
         for i in range(num_process):
@@ -136,18 +139,49 @@ class SubEnvMP():
             #      tasks_lst[2::3] = [3, 6]
             # 将分割后的任务列表添加到 self.tasks_per_process 中
             self.tasks_per_process.append(tasks_lst[i::num_process])
-
-        self.pipe_main2sub = [mp.Pipe() for _ in range(num_process)]
-        self.pipe_sub2main = [mp.Pipe() for _ in range(num_process)]
-
-        
-    def step(acts:list[int], 
-             probs:list[float],
-             values:list[float],):
-        ...
+        # 一个Pipe是一对管道，通过这样的操作给分类存储
+        self.pipe_main2sub, self.pipe_sub2main = \
+            zip(*[mp.Pipe() for _ in range(num_process)])
+        self.states = []
+        for index in range(num_process):
+            process = mp.Process(target=self.run, args=(index))
+            process.start()
     
-    def evel(agent:Agent,
+    def run(self, index:int):
+        """子进程循环"""
+        logger.info(f"Start sub process: {index}")
+        sub_env = SubEnv(self.tasks_per_process[index], self.hyper_params)
+        while True:
+            request, a, p, v = self.pipe_sub2main[index].recv()
+            if request == "step":
+                self.pipe_sub2main[index].send(sub_env.step(a,p,v, self.train_transform))
+            elif request == "reset":
+                self.pipe_sub2main[index].send(sub_env.reset(self.train_transform))
+            else:
+                raise NotImplementedError
+        
+    def step(self, agent:Agent):
+        # 按第一轴进行堆叠
+        s_np = np.vstack(self.states)
+        batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = \
+            agent.batch_desision(torch.from_numpy(s_np).to(agent.device))
+        batch_a:list[int] = batch_a_tensor.squeeze(1).tolist()
+        batch_p:list[float]  = batch_p_tensor.squeeze(1).tolist()
+        batch_v:list[float]  = batch_v_tensor.squeeze(1).tolist()
+        for k, pipe in enumerate(self.pipe_main2sub):
+            num_batches = len(self.tasks_per_process[k])
+            
+
+        for k, (a_k, p_k, v_k, pipe) in enumerate(zip(a, pp, v, self.pipe_main2sub)):
+            subenv_renturn = pipe.recv()  # [s, r, d, dbug] or None
+            if subenv_renturn is not None:
+                s1 = subenv_renturn
+
+
+    
+    def evel(self, agent:Agent,
              
+             # 传入一个Agent对象
              ):
         ...
 
@@ -209,6 +243,11 @@ def main():
     # 初始化环境管理器（单进程）
     # TODO: 优化为多进程版本
     se = SubEnv(tasks, hyper)
+    semp = SubEnvMP(tasks, 
+                    hyper.num_processes, 
+                    hyper, 
+                    transform_domain,
+                    transform_norm)
     # 初始化Agent
     model = VIT3_FC()
     count = sum(p.numel() for p in model.parameters())
