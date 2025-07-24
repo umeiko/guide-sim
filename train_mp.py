@@ -212,6 +212,8 @@ def img_ploter(states:np.ndarray) -> plt.Figure:
 
 # 定义转换管道，包括域随机化
 transform_domain = transforms.Compose([
+    transforms.RandomHorizontalFlip(p=0.5),  # 随机水平翻转
+    transforms.RandomVerticalFlip(p=0.5),  # 随机垂直翻转
     transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2),  # 随机改变颜色属性
     transforms.RandomResizedCrop(size= (256, 256), scale=(0.95, 1.0)),  # 随机裁剪并调整大小
     transforms.RandomRotation(degrees=2),  # 随机旋转
