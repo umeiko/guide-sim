@@ -1,5 +1,6 @@
 from agents.ppo import Agent, ReplayData, ExperimentReplayBuffer
 from networks.vit import VIT3_FC
+from networks.hybrid import Hybrid_RESNET18_VIT24_FC
 import matplotlib.pyplot as plt
 from env.guide_sim import GuidewireEnv
 from env.metadata import GuideSimMetadata, HyperParams
@@ -175,7 +176,7 @@ def main():
     # TODO: 优化为多进程版本
     se = SubEnv(tasks, hyper)
     # 初始化Agent
-    model = VIT3_FC()
+    model = Hybrid_RESNET18_VIT24_FC()
     count = sum(p.numel() for p in model.parameters())
     print(f"Total number of parameters: {count}")
     agent = Agent(model)
@@ -192,6 +193,7 @@ def main():
     else:
         logging.info(f'create new weights in {os.path.join(weight_path, f"last.pth")}')
     logging.info(f'Model:\n{agent.ac_model}')
+    logging.info(f"Total number of parameters: {count}")
 
     # 初始的数据记录
     s, step, r, = se.evaler(agent, transform_norm)

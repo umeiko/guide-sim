@@ -1,0 +1,19 @@
+{
+    "mask_path": "./merged_tasks2/label/5.png",
+    "background_path": "./merged_tasks2/images/5.png",
+    "target_pos": [
+        28,
+        345
+    ],
+    "direct_pos": [
+        282,
+        368
+    ],
+    "insert_pos": [
+        309,
+        325
+    ],
+    "guide_pos_lst": null,
+    "guide_angle": null,
+    "radius": 4.5
+}

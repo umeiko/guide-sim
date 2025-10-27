@@ -128,6 +128,7 @@ class ExperimentReplayBuffer():
             self.advantages += other.advantages
         else:
             raise TypeError("unsupported operand type(s) for +: 'ExperimentReplayBuffer' and '{}'".format(type(other)))
+        return self
 
 OPT_TYPE = {
     "adam":torch.optim.Adam,

@@ -39,6 +39,7 @@ class SubEnv:
         self.replay_buffer = ExperimentReplayBuffer()
         # 记录每个任务成功率，降低已经能够完成的任务的出现频率
         self.success_rate= [0 for _ in range(len(tasks))]
+        self.need_reset = [False for _ in range(len(tasks))]
 
     # 重启环境
     def reset(self, transfrom: transforms.Compose) -> np.ndarray:
@@ -65,6 +66,7 @@ class SubEnv:
              transfrom: transforms.Compose):
         """对每个子环境串行执行操作并且收集状态"""
         states = []
+
         for k, env in enumerate(self.envs):
             s_next, r, d, _ = env.step(actions[k])
             self.episode_buffer[k].pack_step_data(self.last_states[k], 
@@ -75,9 +77,12 @@ class SubEnv:
                                                   d)
             if d:  # 策略是如果结束了直接开一局新的
                 s_next = env.reset()
-                self.replay_buffer.pack_episode_data(self.episode_buffer[k],
-                                                     self.hyper_params.lambda_,
-                                                     self.hyper_params.gamma)
+                # 只存取第一次完成的轨迹，后面的轨迹就不存了，减少简单任务的数据出现在buffer中的比例
+                if not self.need_reset[k]:
+                    self.replay_buffer.pack_episode_data(self.episode_buffer[k],
+                                                        self.hyper_params.lambda_,
+                                                        self.hyper_params.gamma)
+                self.need_reset[k] = True
             # 域随机化
             s_next = transfrom(
                     torch.tensor(s_next, dtype=torch.uint8))
@@ -119,73 +124,105 @@ class SubEnv:
 
 class SubEnvMP():
     def __init__(self,
-                tasks_lst:list,
-                num_process:int,
+                tasks_lst:list, 
+                # num_process:int,
                 hyper_params:HyperParams,
-                train_transform: transforms.Compose,
-                eval_transform: transforms.Compose
+                #  train_transform: transforms.Compose,
+                #  eval_transform: transforms.Compose
                  ):
-        self.hyper_params = hyper_params
-        self.train_transform = train_transform
-        self.eval_transform = eval_transform
-        assert len(tasks_lst) > num_process, "任务数量少于进程数量"
+        num_process = hyper_params.num_processes
+        assert len(tasks_lst) >= num_process, f"任务数量 ({len(tasks_lst)}) 少于进程数量 ({num_process}) "
+        self.num_process = num_process
         self.tasks_per_process = []
+        self.replay_buffer = ExperimentReplayBuffer()
         for i in range(num_process):
             # 将任务列表 tasks_lst 按照进程数 num_process 进行分割
             # tasks_lst[i::num_process] 表示从索引 i 开始，每隔 num_process 个元素取一个元素
             # 例如，如果 tasks_lst = [1, 2, 3, 4, 5, 6, 7, 8] 且 num_process = 3
-            # 则 tasks_lst[0::3] = [1, 4, 7]
+            # 则   tasks_lst[0::3] = [1, 4, 7]
             #      tasks_lst[1::3] = [2, 5, 8]
             #      tasks_lst[2::3] = [3, 6]
             # 将分割后的任务列表添加到 self.tasks_per_process 中
             self.tasks_per_process.append(tasks_lst[i::num_process])
-        # 一个Pipe是一对管道，通过这样的操作给分类存储
+            logging.info(f"[SubEnvMP] process_split {i}: {tasks_lst[i::num_process]}")
+        # 初始化管道, 使用zip函数将每个进程的管道对分开
+        # main2sub用于主进程发送数据到子进程
+        # sub2main用于子进程发送数据到主进程
         self.pipe_main2sub, self.pipe_sub2main = \
             zip(*[mp.Pipe() for _ in range(num_process)])
-        self.states = []
-        for index in range(num_process):
-            process = mp.Process(target=self.run, args=(index))
-            process.start()
-    
-    def run(self, index:int):
-        """子进程循环"""
-        logger.info(f"Start sub process: {index}")
-        sub_env = SubEnv(self.tasks_per_process[index], self.hyper_params)
-        while True:
-            request, a, p, v = self.pipe_sub2main[index].recv()
-            if request == "step":
-                self.pipe_sub2main[index].send(sub_env.step(a,p,v, self.train_transform))
-            elif request == "reset":
-                self.pipe_sub2main[index].send(sub_env.reset(self.train_transform))
-            else:
-                raise NotImplementedError
         
-    def step(self, agent:Agent):
-        # 按第一轴进行堆叠
-        s_np = np.vstack(self.states)
-        batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = \
-            agent.batch_desision(torch.from_numpy(s_np).to(agent.device))
-        batch_a:list[int] = batch_a_tensor.squeeze(1).tolist()
-        batch_p:list[float]  = batch_p_tensor.squeeze(1).tolist()
-        batch_v:list[float]  = batch_v_tensor.squeeze(1).tolist()
-        for k, pipe in enumerate(self.pipe_main2sub):
-            num_batches = len(self.tasks_per_process[k])
-            
+        for index in range(num_process):
+            process = mp.Process(target=self.process_run, 
+                                 args=(index, self.tasks_per_process[index], hyper_params))
+            process.start()
 
-        for k, (a_k, p_k, v_k, pipe) in enumerate(zip(a, pp, v, self.pipe_main2sub)):
-            subenv_renturn = pipe.recv()  # [s, r, d, dbug] or None
-            if subenv_renturn is not None:
-                s1 = subenv_renturn
-
-
+        
+    def step(self, acts:list[int], 
+             probs:list[float],
+             values:list[float],
+             ):
+        d_per_process = []
+        a, p, v = [],[],[]
+        
+        for i in range(self.num_process):
+            a = acts[i::self.num_process]
+            p = probs[i::self.num_process]
+            v = values[i::self.num_process]
+            self.pipe_main2sub[i].send(("step", (a, p, v)))
+            # logging.info(f"[Main] send process{i} step {a}")
+        
+        for i in range(self.num_process):
+            d = self.pipe_main2sub[i].recv()
+            d_per_process.append(d)
+            # logging.info(f"[Main] get state from process{i}: {d.shape}")
+        states = np.concatenate(d_per_process, axis=0)
+        return states
     
     def evel(self, agent:Agent,
              
-             # 传入一个Agent对象
              ):
         ...
+    
+    def reset(self):
+        logging.info(f"[Main] reset")
+        states_per_process = []
+        for i in range(self.num_process):
+            self.pipe_main2sub[i].send(("reset", None))
+        # logging.info(f"[Main] waiting reset info back")
+        for i in range(self.num_process):
+            states = self.pipe_main2sub[i].recv()
+            # logging.info(f"[Main] get state from process{i}: {states.shape}")
+            states_per_process.append(states)
+        
+        states = np.concatenate(states_per_process, axis=0)
+        return states
 
-
+    def process_run(self, index, tasks, hyper_params:HyperParams):
+        # tasks里面装的是路径
+        logger.info(f"[SubEnvMP] start sub process: {index}")
+        se = SubEnv(tasks, hyper_params)
+        while True:
+            request, datas = self.pipe_sub2main[index].recv()
+            if request == "step":
+                batch_a, batch_p, batch_v = datas
+                states = se.step(batch_a, batch_p, batch_v, transform_domain)
+                self.pipe_sub2main[index].send(states)
+            elif request == "reset":
+                # logging.info(f"[SubEnvMP {index}] step reset")
+                states = se.reset(transform_domain)
+                self.pipe_sub2main[index].send(states)
+            elif request == "get_replay_buffer":
+                logging.info(f"[SubEnvMP {index}] get_replay_buffer {len(se.replay_buffer)}")
+                self.pipe_sub2main[index].send(se.replay_buffer)
+                se.replay_buffer.clear()
+            # elif request == "eval":
+            #     s, step, r, = se.evaler(agent, transform_norm)
+    def replay_buffer_collect(self):
+        for i in range(self.num_process):
+            self.pipe_main2sub[i].send(("get_replay_buffer", None))
+        for i in range(self.num_process):
+            replay_buffer:ExperimentReplayBuffer = self.pipe_main2sub[i].recv()
+            self.replay_buffer += replay_buffer
 
 def img_ploter(states:np.ndarray) -> plt.Figure:
     """将状态画成图，用于暂存到tensorboard中"""
@@ -219,7 +256,7 @@ transform_domain = transforms.Compose([
     transforms.RandomRotation(degrees=2),  # 随机旋转
     transforms.ConvertImageDtype(torch.float32),
     transforms.Normalize(mean=[0.5], std=[0.5])  # 归一化到[-1, 1]之间
-])
+]) 
 
 # 无域随机化的普通转换管道
 transform_norm = transforms.Compose([
@@ -245,15 +282,11 @@ def main():
     # 初始化环境管理器（单进程）
     # TODO: 优化为多进程版本
     se = SubEnv(tasks, hyper)
-    semp = SubEnvMP(tasks, 
-                    hyper.num_processes, 
-                    hyper, 
-                    transform_domain,
-                    transform_norm)
+    se_mp = SubEnvMP(tasks, hyper)
     # 初始化Agent
     model = VIT3_FC()
     count = sum(p.numel() for p in model.parameters())
-    print(f"Total number of parameters: {count}")
+    logging.info(f"Total number of parameters: {count}")
     agent = Agent(model)
     agent.ac_model = model.to(agent.device)
     agent.set_hyperpara(hyper)
@@ -278,21 +311,24 @@ def main():
         writer.add_figure("Last_results", fig, 
                             global_step=0)
         plt.close(fig)
-    states = se.reset(transform_domain)
+    
     losses = None
     best = r
     for epoch in tqdm(range(last_epo, last_epo+hyper.num_epochs)):
+        states = se_mp.reset()
         start_time = time.time()
         for _ in tqdm(range(hyper.max_steps)):
             batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = agent.batch_desision(states)
             batch_a = batch_a_tensor.squeeze(1).tolist()
             batch_p = batch_p_tensor.squeeze(1).tolist()
             batch_v = batch_v_tensor.squeeze(1).tolist()
-            states = se.step(batch_a, batch_p, batch_v, transform_domain)
-        logging.info(f"Collected {len(se.replay_buffer)} datas in buffer, cost {time.time()-start_time:.3f} s")
-        if len(se.replay_buffer) >= hyper.batch_size:
-            losses = agent.learn(se.replay_buffer)
-            se.replay_buffer.clear()
+            states = se_mp.step(batch_a, batch_p, batch_v)
+        
+        se_mp.replay_buffer_collect()
+        logging.info(f"Collected {len(se_mp.replay_buffer)} datas in buffer, cost {time.time()-start_time:.3f} s")
+        if len(se_mp.replay_buffer) >= hyper.batch_size:
+            losses = agent.learn(se_mp.replay_buffer)
+            se_mp.replay_buffer.clear()
         
         # tensorboard
         if losses is not None:
@@ -327,5 +363,6 @@ def main():
 
 
 if __name__ == "__main__":
-    semp = SubEnvMP([i for i in range(27)], 3)
-    print(semp.tasks_per_process)
+    # semp = SubEnvMP([i for i in range(27)], 3)
+    # print(semp.tasks_per_process)
+    main()
