@@ -1,17 +1,17 @@
 {
-    "mask_path": "label/2.png",
-    "background_path": "images/2.png",
+    "mask_path": "label/1.png",
+    "background_path": "images/1.png",
     "target_pos": [
-        79,
-        54
+        77,
+        25
     ],
     "direct_pos": [
-        294,
-        93
+        107,
+        211
     ],
     "insert_pos": [
-        361,
-        93
+        106,
+        242
     ],
     "guide_pos_lst": null,
     "guide_angle": null,

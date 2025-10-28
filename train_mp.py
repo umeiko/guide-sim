@@ -1,5 +1,5 @@
 from agents.ppo import Agent, ReplayData, ExperimentReplayBuffer
-from networks.vit import VIT3_FC
+from networks.networks import MODEL_MAPPING
 import matplotlib.pyplot as plt
 from env.guide_sim import GuidewireEnv
 from env.metadata import GuideSimMetadata, HyperParams
@@ -34,12 +34,12 @@ class SubEnv:
         self.hyper_params = hyper_params
         for env in self.envs:
             env.hyper_params = hyper_params
-        self.last_states = []
+        self.last_states = []  # 保存上一帧的状态，用于buffer的对齐
         self.episode_buffer = [ReplayData() for _ in range(len(tasks))]
         self.replay_buffer = ExperimentReplayBuffer()
         # 记录每个任务成功率，降低已经能够完成的任务的出现频率
-        self.success_rate= [0 for _ in range(len(tasks))]
         self.need_reset = [False for _ in range(len(tasks))]
+        self.finished_steps = [0 for _ in range(len(tasks))]
 
     # 重启环境
     def reset(self, transfrom: transforms.Compose) -> np.ndarray:
@@ -52,11 +52,17 @@ class SubEnv:
             if states is None:
                 states = np.zeros((len(self.tasks), *s.shape))
             states[k, ...] = s
+            self.episode_buffer[k].clear()
         self.dones = [False for _ in range(len(self.tasks))]
+        self.need_reset = [False for _ in range(len(self.tasks))]
+        self.finished_steps = [0 for _ in range(len(self.tasks))]
+        self.finished_rewards = [0 for _ in range(len(self.tasks))]
         # 域随机化
         states = transfrom(
                 torch.tensor(states, dtype=torch.uint8))
         states = states.numpy()
+        self.replay_buffer.clear()
+        
         return states
 
     # 环境执行一步
@@ -68,26 +74,32 @@ class SubEnv:
         states = []
 
         for k, env in enumerate(self.envs):
-            s_next, r, d, _ = env.step(actions[k])
-            self.episode_buffer[k].pack_step_data(self.last_states[k], 
-                                                  actions[k], 
-                                                  probs[k],
-                                                  r,
-                                                  values[k],
-                                                  d)
-            if d:  # 策略是如果结束了直接开一局新的
-                s_next = env.reset()
-                # 只存取第一次完成的轨迹，后面的轨迹就不存了，减少简单任务的数据出现在buffer中的比例
-                if not self.need_reset[k]:
-                    self.replay_buffer.pack_episode_data(self.episode_buffer[k],
-                                                        self.hyper_params.lambda_,
-                                                        self.hyper_params.gamma)
-                self.need_reset[k] = True
-            # 域随机化
-            s_next = transfrom(
-                    torch.tensor(s_next, dtype=torch.uint8))
-            s_next = s_next.numpy()
+            if not self.need_reset[k]:  # 没有结束过
+                s_next, r, d, _ = env.step(actions[k])
+                self.episode_buffer[k].pack_step_data(self.last_states[k], 
+                                                    actions[k], 
+                                                    probs[k],
+                                                    r,
+                                                    values[k],
+                                                    d)
+                # 域随机化            
+                s_next = transfrom(
+                        torch.tensor(s_next, dtype=torch.uint8))
+                s_next = s_next.numpy()
 
+                # 策略是如果结束了，打包状态
+                # 只存取第一次完成的轨迹，后面的轨迹就不存了，减少简单任务的数据出现在buffer中的比例
+                if d:  
+                    logging.info(f"[SubEnvMP]: {self.tasks[k]} finished at {env.now_step} steps. ")
+                    self.finished_steps[k] = env.now_step
+                    self.finished_rewards[k] = r
+                    self.replay_buffer.pack_episode_data(self.episode_buffer[k],
+                                                            self.hyper_params.lambda_,
+                                                            self.hyper_params.gamma)
+                    self.need_reset[k] = True
+            else:  # 已经结束过了，直接返回最后的状态
+                s_next = self.last_states[k]
+            
             states.append(s_next)
         self.last_states = states
         return np.array(states)
@@ -122,6 +134,10 @@ class SubEnv:
                     break     
         return out_states, np.mean(steps), np.mean(rewards)
 
+    @property
+    def states(self):
+        return np.array(self.last_states)
+
 class SubEnvMP():
     def __init__(self,
                 tasks_lst:list, 
@@ -130,11 +146,14 @@ class SubEnvMP():
                 #  train_transform: transforms.Compose,
                 #  eval_transform: transforms.Compose
                  ):
+        self.hyper_params = hyper_params
         num_process = hyper_params.num_processes
         assert len(tasks_lst) >= num_process, f"任务数量 ({len(tasks_lst)}) 少于进程数量 ({num_process}) "
         self.num_process = num_process
         self.tasks_per_process = []
         self.replay_buffer = ExperimentReplayBuffer()
+        self.split_idx = []
+        start = 0
         for i in range(num_process):
             # 将任务列表 tasks_lst 按照进程数 num_process 进行分割
             # tasks_lst[i::num_process] 表示从索引 i 开始，每隔 num_process 个元素取一个元素
@@ -144,7 +163,11 @@ class SubEnvMP():
             #      tasks_lst[2::3] = [3, 6]
             # 将分割后的任务列表添加到 self.tasks_per_process 中
             self.tasks_per_process.append(tasks_lst[i::num_process])
-            logging.info(f"[SubEnvMP] process_split {i}: {tasks_lst[i::num_process]}")
+            self.split_idx.append(
+                (start, start+len(tasks_lst[i::num_process]))
+            )
+            start += len(tasks_lst[i::num_process])
+            logging.info(f"[SubEnvMP] process_split_{i} ({len(tasks_lst[i::num_process])}): {tasks_lst[i::num_process]}")
         # 初始化管道, 使用zip函数将每个进程的管道对分开
         # main2sub用于主进程发送数据到子进程
         # sub2main用于子进程发送数据到主进程
@@ -164,10 +187,10 @@ class SubEnvMP():
         d_per_process = []
         a, p, v = [],[],[]
         
-        for i in range(self.num_process):
-            a = acts[i::self.num_process]
-            p = probs[i::self.num_process]
-            v = values[i::self.num_process]
+        for i, (s, e) in enumerate(self.split_idx):
+            a = acts[s:e]
+            p = probs[s:e]
+            v = values[s:e]
             self.pipe_main2sub[i].send(("step", (a, p, v)))
             # logging.info(f"[Main] send process{i} step {a}")
         
@@ -178,11 +201,50 @@ class SubEnvMP():
         states = np.concatenate(d_per_process, axis=0)
         return states
     
-    def evel(self, agent:Agent,
-             
-             ):
-        ...
+    def eval(self, agent:Agent):
+        '''
+        return:
+            states: np.ndarray, finished_steps: list[int], finished_rewards: list[float]
+        '''
+        states = self.reset()
+        logging.info(f"[Main] start eval")
+        agent.ac_model.eval()
+        finished_steps = []
+        finished_rewards = []
+        with torch.no_grad():
+            for _ in tqdm(range(self.hyper_params.max_steps)):
+                batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = agent.batch_desision(states)
+                batch_a = batch_a_tensor.squeeze(1).tolist()
+                batch_p = batch_p_tensor.squeeze(1).tolist()
+                batch_v = batch_v_tensor.squeeze(1).tolist()
+                states = self.step(batch_a, batch_p, batch_v)
+        for i in range(self.num_process):
+            self.pipe_main2sub[i].send(("get_eval_msg", None))
+            _steps, _rewards = self.pipe_main2sub[i].recv()
+            finished_steps += _steps
+            finished_rewards += _rewards
+        return states, finished_steps, finished_rewards
     
+    def get_eval_msg(self):
+        '''
+        直接从环境收集上次的运行信息, 避免重复eval
+        return:
+            states: np.ndarray, finished_steps: list[int], finished_rewards: list[float]
+        '''
+        finished_steps = []
+        finished_rewards = []
+        states = []
+        for i in range(self.num_process):
+            self.pipe_main2sub[i].send(("get_eval_msg", None))
+            _steps, _rewards = self.pipe_main2sub[i].recv()
+            finished_steps += _steps
+            finished_rewards += _rewards
+            self.pipe_main2sub[i].send(("get_states", None))
+            _states = self.pipe_main2sub[i].recv()
+            states += _states
+        return np.array(states), finished_steps, finished_rewards
+
+
     def reset(self):
         logging.info(f"[Main] reset")
         states_per_process = []
@@ -215,8 +277,10 @@ class SubEnvMP():
                 logging.info(f"[SubEnvMP {index}] get_replay_buffer {len(se.replay_buffer)}")
                 self.pipe_sub2main[index].send(se.replay_buffer)
                 se.replay_buffer.clear()
-            # elif request == "eval":
-            #     s, step, r, = se.evaler(agent, transform_norm)
+            elif request == "get_eval_msg":
+                self.pipe_sub2main[index].send((se.finished_steps, se.finished_rewards))
+            elif request == "get_states":
+                self.pipe_sub2main[index].send(se.last_states)
     def replay_buffer_collect(self):
         for i in range(self.num_process):
             self.pipe_main2sub[i].send(("get_replay_buffer", None))
@@ -264,12 +328,13 @@ transform_norm = transforms.Compose([
     transforms.Normalize(mean=[0.5], std=[0.5])  # 归一化到[-1, 1]之间
 ])
 
+def _sortfunc(name:str):
+    return int(name.split(".")[-2])
+
 def main():
     # TODO: 将该部分参数化
     # 加载任务集
-    dataset_path = "datas/exvivo/"
-    tasks = os.listdir(os.path.join(dataset_path, "task"))
-    tasks = [os.path.join(dataset_path, "task", t) for t in tasks]
+
     hyper = HyperParams()
     hyper.load_from_json("./hyper.json")
 
@@ -278,13 +343,17 @@ def main():
     logging.basicConfig(filename=f'./logs/{current_time}_{hyper.task_name}.log',
                         level=logging.INFO,format=log_format)
     writer = SummaryWriter(log_dir=f'./logs/{hyper.task_name}')
-
-    # 初始化环境管理器（单进程）
-    # TODO: 优化为多进程版本
-    se = SubEnv(tasks, hyper)
+    dataset_path = hyper.task_folder_path
+    tasks = os.listdir(os.path.join(dataset_path, "task"))
+    tasks.sort(key=_sortfunc)
+    tasks = [os.path.join(dataset_path, "task", t) for t in tasks]
+    
+    if hyper.task_num != "all":
+        tasks = tasks[:int(hyper.task_num)]
+    # 初始化环境管理器
     se_mp = SubEnvMP(tasks, hyper)
     # 初始化Agent
-    model = VIT3_FC()
+    model = MODEL_MAPPING[hyper.model]()
     count = sum(p.numel() for p in model.parameters())
     logging.info(f"Total number of parameters: {count}")
     agent = Agent(model)
@@ -302,30 +371,23 @@ def main():
         logging.info(f'create new weights in {os.path.join(weight_path, f"last.pth")}')
     logging.info(f'Model:\n{agent.ac_model}')
 
-    # 初始的数据记录
-    s, step, r, = se.evaler(agent, transform_norm)
-    fig = img_ploter(s)
-    if last_epo == 0:
-        writer.add_scalar('Reward/reward', r, 0)
-        writer.add_scalar('Reward/Spend Steps', step, 0)
-        writer.add_figure("Last_results", fig, 
-                            global_step=0)
-        plt.close(fig)
-    
     losses = None
-    best = r
-    for epoch in tqdm(range(last_epo, last_epo+hyper.num_epochs)):
+    best = 1e-99
+    for epoch in range(last_epo, last_epo+hyper.num_epochs):
         states = se_mp.reset()
         start_time = time.time()
-        for _ in tqdm(range(hyper.max_steps)):
-            batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = agent.batch_desision(states)
-            batch_a = batch_a_tensor.squeeze(1).tolist()
-            batch_p = batch_p_tensor.squeeze(1).tolist()
-            batch_v = batch_v_tensor.squeeze(1).tolist()
-            states = se_mp.step(batch_a, batch_p, batch_v)
+        logging.info(f"=== Epoch {epoch} ===")
+        with torch.no_grad():
+            for _ in tqdm(range(hyper.max_steps+1)):
+                batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = agent.batch_desision(states)
+                batch_a = batch_a_tensor.squeeze(1).tolist()
+                batch_p = batch_p_tensor.squeeze(1).tolist()
+                batch_v = batch_v_tensor.squeeze(1).tolist()
+                states = se_mp.step(batch_a, batch_p, batch_v)
         
         se_mp.replay_buffer_collect()
         logging.info(f"Collected {len(se_mp.replay_buffer)} datas in buffer, cost {time.time()-start_time:.3f} s")
+        
         if len(se_mp.replay_buffer) >= hyper.batch_size:
             losses = agent.learn(se_mp.replay_buffer)
             se_mp.replay_buffer.clear()
@@ -339,27 +401,28 @@ def main():
             logging.info("[loss] [%d] actor: %.2f, critic: %.2f, entropy: %.2f, all: %.2f",
                         epoch, losses[0], losses[1], losses[2], losses[3])
 
-        # eval
-        if (epoch % hyper.plot_interval == 0) and (epoch != 0):
-            s, step, r, = se.evaler(agent, transform_norm)
+            # eval
+            s, steps, rewards = se_mp.get_eval_msg()
+            step = sum(steps) / len(steps)
+            r = sum(rewards) / len(rewards)
             fig = img_ploter(s)
+            logging.info(f"[eval] of episode :{epoch}, avg_score : {r}, avg_steps :{step}")
             writer.add_scalar('Reward/reward', r, epoch)
             writer.add_scalar('Reward/Spend Steps', step, epoch)
-            writer.add_figure("Last_results", fig,
+            writer.add_figure("Last_results", fig, 
                                 global_step=epoch)
             plt.close(fig)
-            if r > best:
-                best = r
-                agent.save(epoch, os.path.join(weight_path, f"best.pth"))
-                logging.info(
-                    f"save best weight in {os.path.join(weight_path, f'best.pth')} with {epoch} epoches")
-            logging.info(f"[eval] of episode :{epoch}, score : {r}, steps :{step}")
-        
-        # checkpoints
-        if ((epoch % hyper.save_interval == 0)):
-            os.makedirs(weight_path, exist_ok=True)
-            agent.save(epoch, os.path.join(weight_path, "last.pth"))
-            logging.info("[checkpoint] last.pth saved.")
+
+            # checkpoints
+            if ((epoch % hyper.save_interval == 0)):
+                os.makedirs(weight_path, exist_ok=True)
+                agent.save(epoch, os.path.join(weight_path, "last.pth"))
+                logging.info("[checkpoint] last.pth saved.")
+                if r > best:
+                    best = r
+                    agent.save(epoch, os.path.join(weight_path, f"best.pth"))
+                    logging.info(
+                        f"save best weight in {os.path.join(weight_path, f'best.pth')} with {epoch} epoches")
 
 
 if __name__ == "__main__":

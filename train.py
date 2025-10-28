@@ -1,6 +1,5 @@
 from agents.ppo import Agent, ReplayData, ExperimentReplayBuffer
-from networks.vit import VIT3_FC
-from networks.hybrid import Hybrid_RESNET18_VIT24_FC
+from networks.networks import MODEL_MAPPING
 import matplotlib.pyplot as plt
 from env.guide_sim import GuidewireEnv
 from env.metadata import GuideSimMetadata, HyperParams
@@ -94,27 +93,28 @@ class SubEnv:
         rewards = []
         steps = []
         out_states = []
-        for k, env in enumerate(self.envs):
-            num_steps = 0
-            for _ in range(self.hyper_params.max_steps):
-                a, _,_ = agent.desision(states[k])
-                state, reward, done, _ = env.step(a)
+        with torch.no_grad():
+            for k, env in enumerate(tqdm(self.envs)):
+                num_steps = 0
+                for _ in range(self.hyper_params.max_steps):
+                    a, _,_ = agent.desision(states[k])
+                    state, reward, done, _ = env.step(a)
 
-                # 域随机化
-                state = transfrom(
-                    torch.tensor(state, dtype=torch.uint8))
-                state = state.numpy()
-                # 回到numpy
-                states[k] = state
+                    # 域随机化
+                    state = transfrom(
+                        torch.tensor(state, dtype=torch.uint8))
+                    state = state.numpy()
+                    # 回到numpy
+                    states[k] = state
 
-                num_steps += 1
-                if done:
-                    logging.info(f"[eval] ID {k}: {env.task_path} done.")
-                    logging.info(f"\treward: {reward}, steps: {num_steps}")
-                    rewards.append(reward)
-                    steps.append(num_steps)
-                    out_states.append(state)
-                    break     
+                    num_steps += 1
+                    if done:
+                        logging.info(f"[eval] ID {k}: {env.task_path} done.")
+                        logging.info(f"\treward: {reward}, steps: {num_steps}")
+                        rewards.append(reward)
+                        steps.append(num_steps)
+                        out_states.append(state)
+                        break     
         return out_states, np.mean(steps), np.mean(rewards)
     
 def img_ploter(states:np.ndarray) -> plt.Figure:
@@ -157,15 +157,22 @@ transform_norm = transforms.Compose([
     transforms.Normalize(mean=[0.5], std=[0.5])  # 归一化到[-1, 1]之间
 ])
 
+def _sortfunc(name:str):
+    return int(name.split(".")[-2])
+
 def main():
     # TODO: 将该部分参数化
     # 加载任务集
-    dataset_path = "datas/exvivo/"
-    tasks = os.listdir(os.path.join(dataset_path, "task"))
-    tasks = [os.path.join(dataset_path, "task", t) for t in tasks]
     hyper = HyperParams()
     hyper.load_from_json("./hyper.json")
+    dataset_path = "datas/train/"
+    tasks = os.listdir(os.path.join(dataset_path, "task"))
+    tasks.sort(key=_sortfunc)
+    tasks = [os.path.join(dataset_path, "task", t) for t in tasks]
 
+    if hyper.task_num != "all":
+        tasks = tasks[:int(hyper.task_num)]
+    logging.info(f"Loaded {len(tasks)} tasks for training.")
     # 设置日志模块
     os.makedirs("./logs", exist_ok=True)
     logging.basicConfig(filename=f'./logs/{current_time}_{hyper.task_name}.log',
@@ -176,7 +183,7 @@ def main():
     # TODO: 优化为多进程版本
     se = SubEnv(tasks, hyper)
     # 初始化Agent
-    model = Hybrid_RESNET18_VIT24_FC()
+    model = MODEL_MAPPING[hyper.model]()
     count = sum(p.numel() for p in model.parameters())
     print(f"Total number of parameters: {count}")
     agent = Agent(model)
@@ -210,11 +217,12 @@ def main():
     for epoch in tqdm(range(last_epo, last_epo+hyper.num_epochs)):
         start_time = time.time()
         for _ in tqdm(range(hyper.max_steps)):
-            batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = agent.batch_desision(states)
-            batch_a = batch_a_tensor.squeeze(1).tolist()
-            batch_p = batch_p_tensor.squeeze(1).tolist()
-            batch_v = batch_v_tensor.squeeze(1).tolist()
-            states = se.step(batch_a, batch_p, batch_v, transform_domain)
+            with torch.no_grad():
+                batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = agent.batch_desision(states)
+                batch_a = batch_a_tensor.squeeze(1).tolist()
+                batch_p = batch_p_tensor.squeeze(1).tolist()
+                batch_v = batch_v_tensor.squeeze(1).tolist()
+                states = se.step(batch_a, batch_p, batch_v, transform_domain)
         logging.info(f"Collected {len(se.replay_buffer)} datas in buffer, cost {time.time()-start_time:.3f} s")
         if len(se.replay_buffer) >= hyper.batch_size:
             losses = agent.learn(se.replay_buffer)

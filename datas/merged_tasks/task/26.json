@@ -1,17 +1,17 @@
 {
-    "mask_path": "./merged_tasks2/label/8.png",
-    "background_path": "./merged_tasks2/images/8.png",
+    "mask_path": "label/1.png",
+    "background_path": "images/1.png",
     "target_pos": [
-        100,
-        229
+        236,
+        156
     ],
     "direct_pos": [
-        140,
-        152
+        153,
+        59
     ],
     "insert_pos": [
-        195,
-        109
+        73,
+        71
     ],
     "guide_pos_lst": null,
     "guide_angle": null,

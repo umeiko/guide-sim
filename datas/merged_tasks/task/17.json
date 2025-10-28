@@ -1,6 +1,6 @@
 {
-    "mask_path": "./merged_tasks2/label/2.png",
-    "background_path": "./merged_tasks2/images/2.png",
+    "mask_path": "label/7.png",
+    "background_path": "images/7.png",
     "target_pos": [
         280,
         145

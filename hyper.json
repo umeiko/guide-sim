@@ -5,7 +5,11 @@
         256,
         256
     ],
-    "batch_size": 16,
+    "model": "HYBRID_RESNET18_VITS_FC",
+    "max_forward_batch":128,
+    "task_folder_path":  "./datas/train",
+    "task_num": "100",
+    "batch_size": 46,
     "beta": 0.02,
     "lr": 1e-06,
     "gamma": 0.98,
@@ -15,11 +19,11 @@
     "epsilon": 0.2,
     "device": "cuda:0",
     "c_coef": 1.0,
-    "exp_reuse_rate": 10,
+    "exp_reuse_rate": 4,
     "plot_interval": 10,
     "save_interval": 10,
     "num_processes": 3,
-    "task_name": "task_vit24_mp",
+    "task_name": "task_resnet18_vits_mp",
     "A*DenseReward" : false,
     "L2DenseReward" : true
 }

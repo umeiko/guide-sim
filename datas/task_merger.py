@@ -2,7 +2,7 @@ import os
 import json
 
 PATH_A = "./merged_tasks"
-PATH_B = "./vivo_single_branch"
+PATH_B = "./merged_tasks3"
 PATH_MERGED = "./merged_tasks2"
 
 tsk_a_mask_lst = [os.path.join(PATH_A, "label", i) \
@@ -26,15 +26,15 @@ cnt = 0
 for i in tsk_a_mask_lst:
     fname = i.split("/")[-1]
     image_path = os.path.join(PATH_A, "images", fname)
-    mapping[i] = os.path.join(PATH_MERGED, "label", f"{cnt}.png")
-    mapping[image_path] = os.path.join(PATH_MERGED, "images", f"{cnt}.png")
+    mapping[i] = os.path.join("label", f"{cnt}.png")
+    mapping[image_path] = os.path.join("images", f"{cnt}.png")
     cnt += 1
 
 for i in tsk_b_mask_lst:
     fname = i.split("/")[-1]
     image_path = os.path.join(PATH_B, "images", fname)
-    mapping[i] = os.path.join(PATH_MERGED, "label", f"{cnt}.png")
-    mapping[image_path] = os.path.join(PATH_MERGED, "images", f"{cnt}.png")
+    mapping[i] = os.path.join("label", f"{cnt}.png")
+    mapping[image_path] = os.path.join("images", f"{cnt}.png")
     cnt += 1
 
 os.makedirs(os.path.join(PATH_MERGED, "task"), exist_ok=True)
@@ -44,7 +44,7 @@ os.makedirs(os.path.join(PATH_MERGED, "label"), exist_ok=True)
 print("="*20, "copy images", "="*20)
 for i in mapping:
     print(i, "->", mapping[i])
-    os.system(f"cp {i} {mapping[i]}")
+    os.system(f"cp {i} {os.path.join(PATH_MERGED, mapping[i])}")
 
 tsk_a_task_lst = os.listdir(
     os.path.join(PATH_A, "task"))

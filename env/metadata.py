@@ -86,4 +86,8 @@ class HyperParams(BaseMetadata):
         self.save_interval = 50
         self.num_processes = 10
         self.task_name = "task_vit"
+        self.model = "VIT3_FC"
+        self.task_folder_path = "./datas/train"
+        self.task_num = "all"
+        self.max_forward_batch = 32
 

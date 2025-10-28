@@ -4,9 +4,19 @@
 import os
 import json
 import time
+import argparse
 from  env.metadata import GuideSimMetadata, HyperParams
 
-DATASET_PATH = "./datas/vivo_single_branch"
+
+parser = argparse.ArgumentParser(description="将旧任务转换为新版本task")
+parser.add_argument(
+    "--dataset_path",
+    type=str,
+    default="./datas/real_x_ray_harder",
+    help="数据集路径"
+)
+args = parser.parse_args()
+DATASET_PATH = args.dataset_path
 
 BACKGROUND_PATH = os.path.join(DATASET_PATH, "images")
 MASKS_PATH = os.path.join(DATASET_PATH, "label")
@@ -14,14 +24,15 @@ TASK_PATH = os.path.join(DATASET_PATH, "task")
 OLD_TASKS_PATH = os.path.join(DATASET_PATH, "envmsgs")
 
 MASKS = os.listdir(MASKS_PATH)
-TASKS = os.listdir(TASK_PATH)
+# TASKS = os.listdir(TASK_PATH)
+os.makedirs(os.path.join(DATASET_PATH, "task"), exist_ok=True)
 OLD_TASKS = os.listdir(OLD_TASKS_PATH)
 
 def _sortfunc(name:str):
     return int(name.split(".")[0])
 
 MASKS.sort(key=_sortfunc)
-TASKS.sort(key=_sortfunc)
+# TASKS.sort(key=_sortfunc)
 
 def open_old_msg(path:str):
     with open(path, "r") as f:
@@ -38,6 +49,7 @@ def main():
         matadata.direct_pos = [old_msg[1][0] //2 , old_msg[1][1] // 2]
         matadata.target_pos = [old_msg[2][0] //2 , old_msg[2][1] // 2]
         matadata.save_to_json(os.path.join(TASK_PATH, i.split(".")[0] + ".json"))
+        print(f"Converted task saved to {os.path.join(TASK_PATH, i.split('.')[0] + '.json')}")
 
 if __name__ == '__main__':
     main()

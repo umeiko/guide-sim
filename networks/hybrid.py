@@ -83,7 +83,57 @@ class Hybrid_RESNET18_VIT3_FC(nn.Module):
         return a, self.critic_linear(x)
     
 
-class Hybrid_RESNET18_VIT24_FC(nn.Module):
+class HYBRID_RESNET18_VITS_FC(nn.Module):
+    def __init__(self, input_channels=1, act_num=5, use_softmax=True):
+        super().__init__()
+        self.input_shape = (input_channels, 256, 256)
+        # resnet18构造
+        self.resnet18 = models.resnet18(weights=None) 
+        replace_bn_with_identity(self.resnet18)
+        self.resnet18.conv1  = nn.Conv2d(input_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.resnet18.fc  = nn.Identity()  # 使用 Identity 替代 fc 层
+        self.use_softmax = use_softmax
+        # VIT 构造
+        self.vit = ViT(
+                image_size = 256,
+                channels = input_channels,
+                patch_size = 16,
+                num_classes = 5,
+                dim = 768,
+                depth = 12,
+                heads = 12,
+                mlp_dim = 3072,
+                dropout = 0.1,
+                emb_dropout = 0.1
+            )
+        self.vit.mlp_head = nn.Linear(768, 512)
+        self.use_softmax = use_softmax
+        
+        self.hybrid_linear = nn.Linear(1024, 1024)
+        
+        self.critic_linear = nn.Linear(1024, 1)
+        self.actor_linear = nn.Linear(1024, act_num)
+        initialize_weights(self)
+
+    def forward(self, x:torch.Tensor):
+        for k, shape in enumerate(self.input_shape):
+            if x.shape[k+1] != shape:
+                raise ValueError(f"Input shape should be {self.input_shape}, got {x.shape[1:]}")
+        # [b, 512]
+        x1 = self.resnet18(x)
+        # [b, 512]
+        x2 = self.vit(x)
+        # [b, 1024]
+        x = torch.cat([x1, x2], dim=1)
+        x = F.gelu(self.hybrid_linear(x))
+
+        if self.use_softmax:
+            a = F.softmax(self.actor_linear(x), dim=1)
+        else:
+            a = self.actor_linear(x)
+        return a, self.critic_linear(x)
+
+class HYBRID_RESNET18_VIT24_FC(nn.Module):
     def __init__(self, input_channels=1, act_num=5, use_softmax=True):
         super().__init__()
         self.input_shape = (input_channels, 256, 256)
@@ -132,3 +182,7 @@ class Hybrid_RESNET18_VIT24_FC(nn.Module):
         else:
             a = self.actor_linear(x)
         return a, self.critic_linear(x)
+    
+MODEL_MAPPING = {
+    "HYBRID_RESNET18_VITS_FC": HYBRID_RESNET18_VITS_FC,
+}

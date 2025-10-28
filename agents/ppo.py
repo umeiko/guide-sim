@@ -8,6 +8,7 @@ import numpy as np
 import logging
 import os
 import time
+from tqdm import tqdm
 from env.metadata import HyperParams 
 
 
@@ -173,6 +174,7 @@ class Agent():
         self.epoch = 0
         self.optm:torch.optim.Optimizer = None
         self.optim_type = "adam"
+        self.max_forward_batch = 32
     
     def set_hyperpara(self, hp:HyperParams):
         self.lr = hp.lr
@@ -184,6 +186,7 @@ class Agent():
         self.batch_size = hp.batch_size
         self.exp_reuse_rate = hp.exp_reuse_rate
         self.optim_type = hp.optim_type
+        self.max_forward_batch = hp.max_forward_batch
 
     
     def plot_attrs(self):
@@ -266,19 +269,36 @@ class Agent():
             
             action: `[batch_size, 1]`
             
-            predict_prob: `[batch_size, action_num]`
+            predict_prob: `[batch_size, 1]`
             
             value: `[batch_size, 1]`
             
             probs: `[batch_size, action_num]`
         '''
-        # state : [batch_size, channel, height, width]
-        state:torch.Tensor = torch.Tensor(state).to(torch.float32).to(self.device)
-        probs, value = self.ac_model(state)
-        # predict_prob : [batch_size, action_num]
-        # value : [batch_size, 1]
-        action = torch.multinomial(probs, 1, False)
-        predict_prob = torch.gather(probs, 1, action)
+        # 将state按照batch_size分割 (否则会OOM)
+        # 分割完以后按照batch顺序进行前向
+        # 最后按照原顺序拼接起来
+        num_block = state.shape[0] // self.max_forward_batch 
+        if state.shape[0] % self.max_forward_batch != 0:
+            num_block += 1
+        a,pp,v,p = [],[],[],[]
+        for i in range(num_block):
+            # state : [max_forward_batch, channel, height, width]
+            block_state = state[i*self.max_forward_batch : (i+1)*self.max_forward_batch]
+            state_tensor:torch.Tensor = torch.Tensor(block_state).to(torch.float32).to(self.device)
+            probs, value = self.ac_model(state_tensor)
+            # predict_prob : [batch_size, 1]
+            # value : [batch_size, 1]
+            action = torch.multinomial(probs, 1, False)
+            predict_prob = torch.gather(probs, 1, action)
+            a.append(action.cpu())
+            pp.append(predict_prob.cpu())
+            v.append(value.cpu())
+            p.append(probs.cpu())
+        action = torch.cat(a, dim=0)
+        predict_prob = torch.cat(pp, dim=0)
+        value = torch.cat(v, dim=0)
+        probs = torch.cat(p, dim=0)
         return action, predict_prob, value, probs
 
 
@@ -317,29 +337,54 @@ class Agent():
         s, a, r, old_probs, value, gae, advantages,  = replaybuffer.get_needed_data()
         # print("s shape:", s.shape)
         avg_losses = [0,0,0,0]  # 将此次计算得到的平均损失输出用于记录
-        times = round(self.exp_reuse_rate * len(s) / self.batch_size)
-        self.ac_model.train()
+        
+        s = torch.from_numpy(s).float().pin_memory()
+        a = torch.from_numpy(a).unsqueeze(1).long().to(self.device) 
+        gae = torch.from_numpy(gae).float().unsqueeze(-1).to(self.device) 
+        advantages = torch.from_numpy(advantages).unsqueeze(-1).float().to(self.device) 
+        old_probs = torch.from_numpy(old_probs).float().unsqueeze(-1).to(self.device)
+
+
         start_time = time.time()
+        epochs = self.exp_reuse_rate
+        batch_size = self.batch_size
+        N = len(s)
+        self.ac_model.train()
+        total_actor = total_critic = total_entropy = total_loss = 0.0
+        total_batches = 0
+        for epo in range(epochs):
+            # 打乱索引
+            indices = torch.randperm(N)
+            # 分batch训练
+            print(f"[learn]: mini_eopch {epo + 1} / {epochs}")
+            for start in tqdm(range(0, N, self.batch_size)):
+                end = min(start + batch_size, N)
+                batch_idx = indices[start:end]
+                # indice = list(randperm(len(s))[:self.batch_size])  # 随机采样一部分
+                s_batch = s[batch_idx].to(self.device, non_blocking=True) 
+                a_batch = a[batch_idx] 
+                gae_batch =  gae[batch_idx]
+                advantages_batch =  advantages[batch_idx]
+                old_probs_batch =  old_probs[batch_idx]
 
-        for _ in range(times):
-            indice = torch.randperm(len(s))[:self.batch_size]  # 随机采样一部分
-            # indice = list(randperm(len(s))[:self.batch_size])  # 随机采样一部分
-            s_batch = torch.tensor(s[indice]).to(torch.float32).to(self.device) 
-            a_batch = torch.tensor(a[indice]).unsqueeze(1).to(torch.int64).to(self.device) 
-            gae_batch =  torch.tensor(gae[indice]).to(torch.float32).unsqueeze(-1).to(self.device) 
-            advantages_batch =  torch.tensor(advantages[indice]).unsqueeze(-1).to(torch.float32).to(self.device)  
-            old_probs_batch =  torch.tensor(old_probs[indice]).unsqueeze(-1).to(torch.float32).to(self.device)  
-
-            loss, debug_msg = self.forward_fn(s_batch, a_batch, gae_batch, advantages_batch, old_probs_batch)
-            actor_loss, critic_loss, entropy_loss = debug_msg
-            self.optm.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.ac_model.parameters(), 0.5)
-            self.optm.step()
-            # 累加损失
-            avg_losses[0] += float(actor_loss) / times
-            avg_losses[1] += float(critic_loss) / times
-            avg_losses[2] += float(entropy_loss) / times
-            avg_losses[3] += float(loss) / times
+                loss, debug_msg = self.forward_fn(s_batch, a_batch, gae_batch, advantages_batch, old_probs_batch)
+                actor_loss, critic_loss, entropy_loss = debug_msg
+                self.optm.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.ac_model.parameters(), 0.5)
+                self.optm.step()
+                # 累加损失
+                total_actor += float(actor_loss)
+                total_critic += float(critic_loss)
+                total_entropy += float(entropy_loss)
+                total_loss += float(loss)
+                total_batches += 1
+                
+        avg_losses = [
+            total_actor / total_batches,
+            total_critic / total_batches,
+            total_entropy / total_batches,
+            total_loss / total_batches
+        ]
         logging.info(f"Trained with {len(replaybuffer)} datas in buffer, cost {time.time()-start_time:.3f} s")
         return avg_losses

@@ -161,7 +161,7 @@ def ndarray_gray_to_surf(ndarray:np.ndarray):
 
 class GuidewireEnv():
     def __init__(self, task_path:str=None, dataset_path: str = None):
-        logging.info("Initializing GuidewireEnv ...")
+        # logging.info("Initializing GuidewireEnv ...")
         if dataset_path is None:
             self.dataset_path = os.path.dirname(os.path.dirname(task_path))
         else:
@@ -176,7 +176,7 @@ class GuidewireEnv():
         self._mask_surf_np = None
         self.a_star_path_np = None
         self.load_task(task_path)
-        logging.info("Load metadata from %s", task_path)
+        # logging.info("Load metadata from %s", task_path)
         
         self.step_punishment = 0.00
         self.image_size:tuple[int, int] = self.hyper_params.img_size
