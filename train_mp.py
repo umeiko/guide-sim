@@ -37,7 +37,6 @@ class SubEnv:
         self.last_states = []  # 保存上一帧的状态，用于buffer的对齐
         self.episode_buffer = [ReplayData() for _ in range(len(tasks))]
         self.replay_buffer = ExperimentReplayBuffer()
-        # 记录每个任务成功率，降低已经能够完成的任务的出现频率
         self.need_reset = [False for _ in range(len(tasks))]
         self.finished_steps = [0 for _ in range(len(tasks))]
 
@@ -349,7 +348,7 @@ def main():
     tasks = [os.path.join(dataset_path, "task", t) for t in tasks]
     
     if hyper.task_num != "all":
-        tasks = tasks[:int(hyper.task_num)]
+        tasks = tasks[100:100+int(hyper.task_num)]
     # 初始化环境管理器
     se_mp = SubEnvMP(tasks, hyper)
     # 初始化Agent
@@ -363,7 +362,7 @@ def main():
     # 加载模型权重
     weight_path = os.path.join("./weights", hyper.task_name)
     os.makedirs(weight_path, exist_ok=True)
-    last_epo = 0
+    last_epo = -1
     if agent.load(os.path.join(weight_path, "last.pth"),'cuda:0'):
         last_epo = int(agent.epoch)
         logging.info(f'loaded weight in {os.path.join(weight_path, "last.pth")} with {last_epo} epoches')
@@ -373,7 +372,7 @@ def main():
 
     losses = None
     best = 1e-99
-    for epoch in range(last_epo, last_epo+hyper.num_epochs):
+    for epoch in range(last_epo+1, last_epo+hyper.num_epochs):
         states = se_mp.reset()
         start_time = time.time()
         logging.info(f"=== Epoch {epoch} ===")
@@ -405,7 +404,12 @@ def main():
             s, steps, rewards = se_mp.get_eval_msg()
             step = sum(steps) / len(steps)
             r = sum(rewards) / len(rewards)
+            finished_tasks = 0
+            for i in steps:
+                if i < hyper.max_steps:
+                    finished_tasks += 1
             fig = img_ploter(s)
+            logging.info(f"[eval] of episode :{epoch}, task_finish : {finished_tasks} / {len(steps)}")
             logging.info(f"[eval] of episode :{epoch}, avg_score : {r}, avg_steps :{step}")
             writer.add_scalar('Reward/reward', r, epoch)
             writer.add_scalar('Reward/Spend Steps', step, epoch)
@@ -414,15 +418,14 @@ def main():
             plt.close(fig)
 
             # checkpoints
-            if ((epoch % hyper.save_interval == 0)):
-                os.makedirs(weight_path, exist_ok=True)
-                agent.save(epoch, os.path.join(weight_path, "last.pth"))
-                logging.info("[checkpoint] last.pth saved.")
-                if r > best:
-                    best = r
-                    agent.save(epoch, os.path.join(weight_path, f"best.pth"))
-                    logging.info(
-                        f"save best weight in {os.path.join(weight_path, f'best.pth')} with {epoch} epoches")
+            os.makedirs(weight_path, exist_ok=True)
+            agent.save(epoch, os.path.join(weight_path, "last.pth"))
+            logging.info("[checkpoint] last.pth saved.")
+            if r > best:
+                best = r
+                agent.save(epoch, os.path.join(weight_path, f"best.pth"))
+                logging.info(
+                    f"save best weight in {os.path.join(weight_path, f'best.pth')} with {epoch} epoches")
 
 
 if __name__ == "__main__":

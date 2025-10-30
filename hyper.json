@@ -24,6 +24,6 @@
     "save_interval": 10,
     "num_processes": 3,
     "task_name": "task_resnet18_vits_mp",
-    "A*DenseReward" : false,
-    "L2DenseReward" : true
+    "A*DenseReward" : true,
+    "L2DenseReward" : false
 }
