@@ -58,6 +58,21 @@ def gray_to_rgb(gray:np.ndarray)->np.ndarray:
         gray = gray.swapaxes(0, 1)
     return np.array(cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB))
 
+def detect_self_collision(points, min_distance, ignore_adjacent=5):
+    """
+    points: np.array of shape (N, 3) or (N, 2)
+    min_distance: 导丝直径（或安全距离阈值）
+    ignore_adjacent: 忽略相邻的几个节点（如 ignore_adjacent=2 表示忽略 i±2 以内）
+    """
+
+    N = len(points)
+    points = np.array(points)
+    for i in range(N):
+        for j in range(i + ignore_adjacent + 1, N):
+            dist = np.linalg.norm(points[i] - points[j])
+            if dist < min_distance:
+                return True
+    return False
 def l2_distance_square(point1, point2):
     """
     没有开根的欧氏距离 (为了优化计算速度)
@@ -268,6 +283,9 @@ class GuidewireEnv():
         pos_target = self.get_now_target_pos()
         done = False
         now_dis = self.get_a_star_distance()  # self.a_star_path_np也会被更新
+        is_collision = detect_self_collision(self.engine.get_guide_pos_list(),
+                                              2.5*self.metadata.radius,
+                                              )
         if l2_is_done(pos_g_tip, pos_target, 4 * self.metadata.radius):
             done = True
             now_dis = 4 * self.metadata.radius
@@ -276,21 +294,26 @@ class GuidewireEnv():
             # reward = -math.log( ( 4 * self.metadata.radius / self.inial_a_star)  * 0.05 + 0.0001)
             reward = math.log(self.inial_a_star / ( now_dis**2 / self.inial_a_star + 1e-5) )
         else:
+            d_penalty = 0
+            if is_collision:
+                d_penalty = 5.0 * self.metadata.radius  # 相当于因缠绕损失了 5节点 的有效推进
+            reward_dis = now_dis + d_penalty
             # 没有到达终点，但是已经超出了最大步数限制
             if self.now_step >= self.hyper_params.max_steps:
                 done = True
                 # 没有到达终点的最终稀疏奖励，使用最终距离
-                reward = math.log(self.inial_a_star / ( now_dis**2 / self.inial_a_star + 1e-5) )
+                reward = math.log(self.inial_a_star / ( (reward_dis)**2 / self.inial_a_star + 1e-5) )
             else:
                 # 使用A*距离的差值作为密集奖励
-                reward = (self.last_a_star - now_dis) * 10. / self.inial_a_star
+                reward = (self.last_a_star - reward_dis) * 10. / self.inial_a_star
                 reward = reward * 1.25 if reward < 0. else reward   # 远离终点时，会有额外的惩罚
 
         self.last_a_star = now_dis
+        
         s = self.render()
         # s = np.array(s, dtype=np.float32) / 255.
 
-        return s, reward, done, (pos_g_tip, pos_target, self.now_step)
+        return s, reward, done, (pos_g_tip, pos_target, self.now_step, is_collision)
 
     def get_a_star_path(self)->np.ndarray:
         a_star_path_np = a_star(self._mask_surf_np,

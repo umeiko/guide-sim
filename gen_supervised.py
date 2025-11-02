@@ -53,11 +53,12 @@ LOGGER.addHandler(console_handler)
 
 DATASET_PATH = "./datas/exvivo"
 OUTPUT_PATH = "./supervised_datas/train"
-
+os.makedirs(OUTPUT_PATH, exist_ok=True)
 TASK_PATH = os.path.join(DATASET_PATH, "task")
 TASK_PATH = os.path.join(DATASET_PATH, "task")
 TASKS = os.listdir(TASK_PATH)
 OUTPUTS = os.listdir(OUTPUT_PATH)
+
 
 def _sortfunc(name:str):
     return int(name.split(".")[0])
@@ -102,6 +103,7 @@ class PygameWindow():
         d = None
         s = None
         r = 0
+        
         if key == K_w:
             s, r, d, _ = self.env.step(0)
             self.actions.append(0)
@@ -114,7 +116,6 @@ class PygameWindow():
         elif key == K_d:
             s, r, d, _ = self.env.step(3)
             self.actions.append(3)
-
         elif key == K_SPACE:
             flag_save = False
             state = self.env.reset()
@@ -123,7 +124,8 @@ class PygameWindow():
             self.actions = []
             self._bgs    = [state]
             self.done = False
-
+        if key in [K_w, K_s, K_a, K_d]:
+            print(r, _)
         if flag_save:
             if not self.done:
                 self.bg_buffer.blit(ndarray_gray_to_surf(s), (0, 0))
