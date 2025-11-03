@@ -175,6 +175,7 @@ class Agent():
         self.optm:torch.optim.Optimizer = None
         self.optim_type = "adam"
         self.max_forward_batch = 32
+        self.load_opt_weight = True
     
     def set_hyperpara(self, hp:HyperParams):
         self.lr = hp.lr
@@ -187,6 +188,7 @@ class Agent():
         self.exp_reuse_rate = hp.exp_reuse_rate
         self.optim_type = hp.optim_type
         self.max_forward_batch = hp.max_forward_batch
+        self.load_opt_weight = hp.load_opt_weight
 
     
     def plot_attrs(self):
@@ -212,12 +214,15 @@ class Agent():
             success =  False
         
         try:
-            if checkpoint['type_opt'] == self.optim_type:
+            if checkpoint['type_opt'] == self.optim_type and self.load_opt_weight:
                 type_opt = checkpoint['type_opt']
                 self.optm:torch.optim.Optimizer = OPT_TYPE[type_opt](self.ac_model.parameters())
                 self.optm.load_state_dict(checkpoint['optimizer_state_dict'])
             else:
-                logging.error(f"loading Optimizer error: excepted {self.optim_type} but got checkpoint:{checkpoint['type_opt']}")
+                if not self.load_opt_weight:
+                    logging.warning("Optimizer not loaded due to load_opt_weight is False")
+                else:
+                    logging.error(f"loading Optimizer error: excepted {self.optim_type} but got checkpoint:{checkpoint['type_opt']}")
         except Exception as e:
             logging.error(f"loading Optimizer with error: {e}")
         return success 

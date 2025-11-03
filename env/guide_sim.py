@@ -60,9 +60,13 @@ def gray_to_rgb(gray:np.ndarray)->np.ndarray:
 
 def detect_self_collision(points, min_distance, ignore_adjacent=5):
     """
-    points: np.array of shape (N, 3) or (N, 2)
-    min_distance: 导丝直径（或安全距离阈值）
-    ignore_adjacent: 忽略相邻的几个节点（如 ignore_adjacent=2 表示忽略 i±2 以内）
+    检查给定点集是否发生自碰撞
+
+    `points`: `np.array` of shape (N, 3) or (N, 2)
+    
+    `min_distance`: 或安全距离阈值
+    
+    `ignore_adjacent`: 忽略相邻的几个节点（如 ignore_adjacent=2 表示忽略 i±2 以内）
     """
 
     N = len(points)
@@ -295,8 +299,8 @@ class GuidewireEnv():
             reward = math.log(self.inial_a_star / ( now_dis**2 / self.inial_a_star + 1e-5) )
         else:
             d_penalty = 0
-            if is_collision:
-                d_penalty = 5.0 * self.metadata.radius  # 相当于因缠绕损失了 5节点 的有效推进
+            if is_collision and action!=1: # 惩罚缠绕但是不执行导丝撤回的情况
+                d_penalty = 4.0 * self.metadata.radius  # 相当于因缠绕损失了 5节点 的有效推进
             reward_dis = now_dis + d_penalty
             # 没有到达终点，但是已经超出了最大步数限制
             if self.now_step >= self.hyper_params.max_steps:
