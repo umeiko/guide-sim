@@ -4,16 +4,27 @@ import cv2
 from  tqdm import tqdm
 
 os.chdir("/home/umeko/ws/guide-sim/datas")
-PATH = "./merged_tasks"
+PATH = "./train"
 TASK_PATH = os.path.join(PATH, "task")
 TASKS = [os.path.join(TASK_PATH, name) for name in os.listdir(TASK_PATH)]
+NOVAS_TASKS = [os.path.join(PATH, "novas", name) for name in os.listdir(TASK_PATH)]
 
 os.makedirs(os.path.join(PATH, "overview"), exist_ok=True)
+os.makedirs(os.path.join(PATH, "novas"), exist_ok=True)
+
 for i in tqdm(TASKS):
     with open(i, "r") as f:
         js = json.load(f)
     mask_path = js["mask_path"].replace("\\", "/")
     bg_path = js["background_path"].replace("\\", "/")
+    # 额外的检查：查看 os.path.join(PATH, "novas", xxx.png) 是否是存在的
+    # 如果存在的话, 在配置文件中添加 "novas" 属性
+    if os.path.exists(os.path.join(PATH, "novas", os.path.basename(mask_path))):
+        js["novas"] = os.path.join("novas", os.path.basename(mask_path))
+        jsname = os.path.basename(i)
+        with open(os.path.join("novas", jsname), "w") as f:
+            js = json.dump(f)
+    
     # 读取图像和掩码, 并将掩码以0.25的透明度叠加到图像上
     img = cv2.imread(os.path.join(PATH, bg_path))
     mask = cv2.imread(os.path.join(PATH, mask_path))

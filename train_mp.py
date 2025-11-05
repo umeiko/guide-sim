@@ -153,6 +153,7 @@ class SubEnvMP():
         self.replay_buffer = ExperimentReplayBuffer()
         self.split_idx = []
         start = 0
+        self.tasks_process_order = []
         for i in range(num_process):
             # 将任务列表 tasks_lst 按照进程数 num_process 进行分割
             # tasks_lst[i::num_process] 表示从索引 i 开始，每隔 num_process 个元素取一个元素
@@ -162,10 +163,12 @@ class SubEnvMP():
             #      tasks_lst[2::3] = [3, 6]
             # 将分割后的任务列表添加到 self.tasks_per_process 中
             self.tasks_per_process.append(tasks_lst[i::num_process])
+            self.tasks_process_order += tasks_lst[i::num_process]
             self.split_idx.append(
                 (start, start+len(tasks_lst[i::num_process]))
             )
             start += len(tasks_lst[i::num_process])
+            
             logging.info(f"[SubEnvMP] process_split_{i} ({len(tasks_lst[i::num_process])}): {tasks_lst[i::num_process]}")
         # 初始化管道, 使用zip函数将每个进程的管道对分开
         # main2sub用于主进程发送数据到子进程
@@ -287,7 +290,7 @@ class SubEnvMP():
             replay_buffer:ExperimentReplayBuffer = self.pipe_main2sub[i].recv()
             self.replay_buffer += replay_buffer
 
-def img_ploter(states:np.ndarray) -> plt.Figure:
+def img_ploter(states:np.ndarray, titles:list) -> plt.Figure:
     """将状态画成图，用于暂存到tensorboard中"""
     num_figs = 0
     if isinstance(states, np.ndarray):
@@ -303,9 +306,11 @@ def img_ploter(states:np.ndarray) -> plt.Figure:
         if num_rows == 1:
             axs[i%5].imshow(state[0], cmap="gray")
             axs[i%5].axis('off')
+            axs[i%5].set_title(titles[i])
         else:
             axs[now_row, i%5].imshow(state[0], cmap="gray")
             axs[now_row, i%5].axis('off')
+            axs[now_row, i%5].set_title(titles[i])
         if i%5 == 4:
             now_row += 1
     return fig
@@ -348,7 +353,7 @@ def main():
     tasks = [os.path.join(dataset_path, "task", t) for t in tasks]
     
     if hyper.task_num != "all":
-        tasks = tasks[100:100+int(hyper.task_num)]
+        tasks = tasks[:int(hyper.task_num)]
     # 初始化环境管理器
     se_mp = SubEnvMP(tasks, hyper)
     # 初始化Agent
@@ -408,7 +413,7 @@ def main():
             for i in steps:
                 if i < hyper.max_steps:
                     finished_tasks += 1
-            fig = img_ploter(s)
+            fig = img_ploter(s, se_mp.tasks_process_order)
             logging.info(f"[eval] of episode :{epoch}, task_finish : {finished_tasks} / {len(steps)}")
             logging.info(f"[eval] of episode :{epoch}, avg_score : {r}, avg_steps :{step}")
             writer.add_scalar('Reward/reward', r, epoch)
@@ -429,6 +434,8 @@ def main():
 
 
 if __name__ == "__main__":
-    # semp = SubEnvMP([i for i in range(27)], 3)
-    # print(semp.tasks_per_process)
-    main()
+    import traceback
+    try:
+        main()
+    except Exception as e:
+        logging.error(traceback.format_exc())
