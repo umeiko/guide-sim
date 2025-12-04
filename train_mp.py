@@ -391,11 +391,20 @@ def main():
         
         se_mp.replay_buffer_collect()
         logging.info(f"Collected {len(se_mp.replay_buffer)} datas in buffer, cost {time.time()-start_time:.3f} s")
-        
+
+        # eval
+        s, steps, rewards = se_mp.get_eval_msg()
+        step = sum(steps) / len(steps)
+        r = sum(rewards) / len(rewards)
+        finished_tasks = 0
+        for i in steps:
+            if i < hyper.max_steps:
+                finished_tasks += 1
+        logging.info(f"[eval] of episode :{epoch}, task_finish : {finished_tasks} / {len(steps)}")
+        logging.info(f"[eval] of episode :{epoch}, avg_score : {r}, avg_steps :{step}")
         if len(se_mp.replay_buffer) >= hyper.batch_size:
             losses = agent.learn(se_mp.replay_buffer)
             se_mp.replay_buffer.clear()
-        
         # tensorboard
         if losses is not None:
             writer.add_scalar('Loss/actor', losses[0], epoch)
@@ -404,24 +413,13 @@ def main():
             writer.add_scalar('Loss/all', losses[3], epoch)
             logging.info("[loss] [%d] actor: %.2f, critic: %.2f, entropy: %.2f, all: %.2f",
                         epoch, losses[0], losses[1], losses[2], losses[3])
-
-            # eval
-            s, steps, rewards = se_mp.get_eval_msg()
-            step = sum(steps) / len(steps)
-            r = sum(rewards) / len(rewards)
-            finished_tasks = 0
-            for i in steps:
-                if i < hyper.max_steps:
-                    finished_tasks += 1
             fig = img_ploter(s, se_mp.tasks_process_order)
-            logging.info(f"[eval] of episode :{epoch}, task_finish : {finished_tasks} / {len(steps)}")
-            logging.info(f"[eval] of episode :{epoch}, avg_score : {r}, avg_steps :{step}")
+            
             writer.add_scalar('Reward/reward', r, epoch)
             writer.add_scalar('Reward/Spend Steps', step, epoch)
             writer.add_figure("Last_results", fig, 
                                 global_step=epoch)
             plt.close(fig)
-
             # checkpoints
             os.makedirs(weight_path, exist_ok=True)
             agent.save(epoch, os.path.join(weight_path, "last.pth"))
