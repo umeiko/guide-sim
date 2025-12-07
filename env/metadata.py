@@ -48,8 +48,9 @@ class GuideSimMetadata(BaseMetadata):
     """
     def __init__(self):
         super().__init__()
-        self.mask_path: str       = ""
-        self.background_path: str = ""
+        self.mask_path: str          = ""
+        self.background_path: str    = ""
+        self.no_angiography:str = ""
         self.target_pos:list  = None
         self.direct_pos: list = None
         self.insert_pos: list = None
