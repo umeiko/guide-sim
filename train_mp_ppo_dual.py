@@ -373,7 +373,7 @@ def main():
     # 初始化环境管理器
     se_mp = SubEnvMP(tasks, hyper)
     # 初始化Agent
-    model = MODEL_MAPPING[hyper.model]()
+    model = MODEL_MAPPING[hyper.model](input_channels=2)
     count = sum(p.numel() for p in model.parameters())
     logging.info(f"Total number of parameters: {count}")
     agent = Agent(model)
@@ -416,11 +416,13 @@ def main():
         for i in steps:
             if i < hyper.max_steps:
                 finished_tasks += 1
+        
         logging.info(f"[eval] of episode :{epoch}, task_finish : {finished_tasks} / {len(steps)}")
         logging.info(f"[eval] of episode :{epoch}, avg_score : {r}, avg_steps :{step}")
         if len(se_mp.replay_buffer) >= hyper.batch_size:
             losses = agent.learn(se_mp.replay_buffer)
             se_mp.replay_buffer.clear()
+        writer.add_scalar('Reward/Succ.', finished_tasks/len(steps), epoch)
         # tensorboard
         if losses is not None:
             writer.add_scalar('Loss/actor', losses[0], epoch)
