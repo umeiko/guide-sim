@@ -252,9 +252,10 @@ class GuidewireEnv():
 
         self.last_a_star = None
         self.inial_a_star = None
-        self.soft_task_dist = 60
         self.iniallized = False
         self.line = None
+        self.soft_task_force_reset_limit = 10
+        self.soft_task_force_reset_cnt = 0
 
     def load_task(self, task_path:str, file_reload=True):
         """加载任务"""
@@ -454,27 +455,32 @@ class GuidewireEnv():
         else:
             return None
 
-    def reset(self, debug=True)->np.ndarray:
+    def reset(self, debug=False)->np.ndarray:
         # self.engine.clear_all()
         if self.iniallized:
             is_collision = detect_self_collision(self.engine.get_guide_pos_list(),
-                                                2.5*self.metadata.radius,
+                                                4.5*self.metadata.radius,
                                                 )
-            resampled_target = self.sample_goal(self.soft_task_dist)
+            resampled_target = self.sample_goal(self.hyper_params.soft_task_dist)
         else:
             if debug:
                 print(f"not iniallized")
             is_collision = False
             resampled_target = None
-        if not is_collision and resampled_target is not None:
+        if not is_collision and \
+            resampled_target is not None and \
+            self.soft_task_force_reset_cnt < self.soft_task_force_reset_limit:
+            
             if debug:
                 print(f"is_collision {is_collision} resampled_target {resampled_target}")
             self.set_now_target_pos(resampled_target)
+            self.soft_task_force_reset_cnt += 1
         else:
+            self.soft_task_force_reset_cnt = 0
             del self.engine
             self.engine = simulation.GuideWireEngine()
             self.load_task(self.task_path, False)
-            resampled_target = self.sample_goal(self.soft_task_dist)
+            resampled_target = self.sample_goal(self.hyper_params.soft_task_dist)
             if resampled_target is not None:
                 self.set_now_target_pos(resampled_target)
             if debug:
@@ -521,7 +527,7 @@ class GuidewireEnv():
     
     def set_soft_task_threashold(self, dist:float) -> None:
         """设置软任务生成距离"""
-        self.soft_task_dist = dist
+        self.hyper_params.soft_task_dist = dist
 
 
 if __name__ == "__main__":

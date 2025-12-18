@@ -1,16 +1,16 @@
 {
-    "max_steps": 180,
+    "max_steps": 120,
     "step_punishment": 0,
     "img_size": [
         256,
         256
     ],
-    "model": "HYBRID_RESNET18_VITS_FC",
+    "model": "HYBRID_RESNET18_VIT4",
     "max_forward_batch":128,
     "load_opt_weight": true,
-    "task_folder_path":  "./datas/train",
-    "task_num": "250",
-    "batch_size": 42,
+    "task_folder_path":  "./datas/plastic_tube",
+    "task_num": "100",
+    "batch_size": 32,
     "beta": 0.02,
     "lr": 1e-06,
     "gamma": 0.98,
@@ -24,7 +24,8 @@
     "plot_interval": 10,
     "save_interval": 10,
     "num_processes": 3,
-    "task_name": "task_resnet18_vits_mp",
+    "task_name": "task_soft2.0_resnet18_vits_mp",
     "A*DenseReward" : true,
-    "L2DenseReward" : false
+    "L2DenseReward" : false,
+    "soft_task_dist" : 60
 }

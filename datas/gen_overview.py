@@ -3,8 +3,8 @@ import json
 import cv2
 from  tqdm import tqdm
 
-os.chdir("/home/umeko/ws/guide-sim/datas")
-PATH = "./train"
+os.chdir("/home/umeko/maohaolin/guide-sim/datas")
+PATH = "./plastic_tube"
 TASK_PATH = os.path.join(PATH, "task")
 TASKS = [os.path.join(TASK_PATH, name) for name in os.listdir(TASK_PATH)]
 NOVAS_TASKS = [os.path.join(PATH, "novas", name) for name in os.listdir(TASK_PATH)]

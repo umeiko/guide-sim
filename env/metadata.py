@@ -70,6 +70,7 @@ class HyperParams(BaseMetadata):
         self.max_steps = 80
         self.step_punishment = 0
         self.img_size = [256, 256]
+        self.soft_task_dist = 60
         # PPO_hyper
         self.batch_size = 5
         self.beta = 0.02
@@ -92,4 +93,5 @@ class HyperParams(BaseMetadata):
         self.task_folder_path = "./datas/train"
         self.task_num = "all"
         self.max_forward_batch = 32
+
 

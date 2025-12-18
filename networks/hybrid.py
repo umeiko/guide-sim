@@ -184,7 +184,7 @@ class HYBRID_RESNET18_VIT24_FC(nn.Module):
         return a, self.critic_linear(x)
 
 class HYBRID_RESNET18_VIT4_FC(nn.Module):
-    def __init__(self, input_channels=2, act_num=5, use_softmax=True):
+    def __init__(self, input_channels=1, act_num=5, use_softmax=True):
         super().__init__()
         self.input_shape = (input_channels, 256, 256)
         # resnet18构造

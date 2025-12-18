@@ -1,7 +1,7 @@
 from agents.ppo import Agent, ReplayData, ExperimentReplayBuffer
 from networks.networks import MODEL_MAPPING
 import matplotlib.pyplot as plt
-from env.guide_sim import GuidewireEnv
+from env.guide_sim_soft_task_ver import GuidewireEnv
 from env.metadata import GuideSimMetadata, HyperParams
 from torch.utils.tensorboard import SummaryWriter
 import torch
