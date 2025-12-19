@@ -254,7 +254,10 @@ class GuidewireEnv():
         self.inial_a_star = None
         self.iniallized = False
         self.line = None
-        self.soft_task_force_reset_limit = 10
+        self.soft_task_force_reset_higher_limit = 8
+        self.soft_task_force_reset_lower_limit = 3
+        self.soft_task_force_reset_limit = random.randint(
+            self.soft_task_force_reset_lower_limit, self.soft_task_force_reset_higher_limit)
         self.soft_task_force_reset_cnt = 0
 
     def load_task(self, task_path:str, file_reload=True):
@@ -353,7 +356,7 @@ class GuidewireEnv():
                 reward = math.log(self.inial_a_star / ( (reward_dis)**2 / self.inial_a_star + 1e-5) )
             else:
                 # 使用A*距离的差值作为密集奖励
-                reward = (self.last_a_star - reward_dis) * 10. / self.inial_a_star
+                reward = (self.last_a_star - reward_dis) / 50
                 reward = reward * 1.25 if reward < 0. else reward   # 远离终点时，会有额外的惩罚
 
         self.last_a_star = now_dis
@@ -420,7 +423,7 @@ class GuidewireEnv():
         # 最大采样次数，都失败的话就放弃采样
         max_sample_times = 200
         # 小于这个距离的点会被拒绝
-        rejection_min_dist = max(4*self.metadata.radius, dist*0.5)
+        rejection_min_dist = max(8*self.metadata.radius, dist*0.70)
         entry = np.array(self.metadata.insert_pos, dtype=np.float32)
         # print(f"rejection_min_dist: {rejection_min_dist}")
         theta = self._angle * np.pi / 180.0
@@ -477,6 +480,8 @@ class GuidewireEnv():
             self.soft_task_force_reset_cnt += 1
         else:
             self.soft_task_force_reset_cnt = 0
+            self.soft_task_force_reset_limit = random.randint(
+                self.soft_task_force_reset_lower_limit, self.soft_task_force_reset_higher_limit)
             del self.engine
             self.engine = simulation.GuideWireEngine()
             self.load_task(self.task_path, False)

@@ -1,5 +1,5 @@
 {
-    "max_steps": 120,
+    "max_steps": 80,
     "step_punishment": 0,
     "img_size": [
         256,
@@ -12,8 +12,8 @@
     "task_num": "100",
     "batch_size": 32,
     "beta": 0.02,
-    "lr": 1e-06,
-    "gamma": 0.98,
+    "lr": 1e-05,
+    "gamma": 0.97,
     "lambda_": 0.99,
     "optim_type": "adam",
     "num_epochs": 10000,
@@ -24,8 +24,8 @@
     "plot_interval": 10,
     "save_interval": 10,
     "num_processes": 3,
-    "task_name": "task_soft2.0_resnet18_vits_mp",
+    "task_name": "task_soft3.0_resnet18_vit16_mp",
     "A*DenseReward" : true,
     "L2DenseReward" : false,
-    "soft_task_dist" : 60
+    "soft_task_dist" : 85
 }
