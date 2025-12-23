@@ -357,7 +357,7 @@ def main():
 
     hyper = HyperParams()
     hyper.load_from_json("./hyper_dual.json")
-
+    hyper.print_hyper()
     # 设置日志模块
     os.makedirs("./logs", exist_ok=True)
     logging.basicConfig(filename=f'./logs/{current_time}_{hyper.task_name}.log',

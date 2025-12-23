@@ -1,5 +1,5 @@
 {
-    "max_steps": 160,
+    "max_steps": 80,
     "step_punishment": 0,
     "img_size": [
         256,
@@ -9,11 +9,11 @@
     "max_forward_batch":128,
     "load_opt_weight": true,
     "task_folder_path":  "./datas/train",
-    "task_num": "50",
+    "task_num": "120",
     "batch_size": 64,
     "beta": 0.02,
-    "lr": 1e-06,
-    "gamma": 0.98,
+    "lr": 1e-05,
+    "gamma": 0.97,
     "lambda_": 0.99,
     "optim_type": "adam",
     "num_epochs": 10000,
@@ -24,7 +24,9 @@
     "plot_interval": 10,
     "save_interval": 10,
     "num_processes": 3,
-    "task_name": "task_resnet18_dual",
+    "task_name": "task_resnet18vit4_softtask_v3",
     "A*DenseReward" : true,
-    "L2DenseReward" : false
+    "L2DenseReward" : false,
+    "soft_task_dist" : 65,
+    "use_soft_task" : true
 }

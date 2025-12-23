@@ -70,6 +70,7 @@ class HyperParams(BaseMetadata):
         self.max_steps = 80
         self.step_punishment = 0
         self.img_size = [256, 256]
+        self.use_soft_task = False
         self.soft_task_dist = 60
         # PPO_hyper
         self.batch_size = 5
@@ -88,10 +89,17 @@ class HyperParams(BaseMetadata):
         self.plot_interval = 10
         self.save_interval = 50
         self.num_processes = 10
+        self.use_eval = True
         self.task_name = "task_vit"
         self.model = "VIT3_FC"
         self.task_folder_path = "./datas/train"
+        self.eval_folder_path = "./datas/eval"
         self.task_num = "all"
         self.max_forward_batch = 32
+
+    def print_hyper(self):
+      for key, value in self.__dict__.items():
+        print(f"{key}: {value}")
+        logger.info(f"{key}: {value}")
 
 

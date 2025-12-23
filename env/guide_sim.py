@@ -309,7 +309,7 @@ class GuidewireEnv():
                 reward = math.log(self.inial_a_star / ( (reward_dis)**2 / self.inial_a_star + 1e-5) )
             else:
                 # 使用A*距离的差值作为密集奖励
-                reward = (self.last_a_star - reward_dis) * 10. / self.inial_a_star
+                reward = (self.last_a_star - reward_dis) / 50
                 reward = reward * 1.25 if reward < 0. else reward   # 远离终点时，会有额外的惩罚
 
         self.last_a_star = now_dis

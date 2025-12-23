@@ -356,7 +356,7 @@ class GuidewireEnv():
                 reward = math.log(self.inial_a_star / ( (reward_dis)**2 / self.inial_a_star + 1e-5) )
             else:
                 # 使用A*距离的差值作为密集奖励
-                reward = (self.last_a_star - reward_dis) / 50
+                reward = (self.last_a_star - reward_dis) / 45
                 reward = reward * 1.25 if reward < 0. else reward   # 远离终点时，会有额外的惩罚
 
         self.last_a_star = now_dis
@@ -457,8 +457,19 @@ class GuidewireEnv():
                 return pos[::-1]
         else:
             return None
-
     def reset(self, debug=False)->np.ndarray:
+        if self.hyper_params.use_soft_task:
+            return self.reset_soft_task(debug)
+        else:
+            del self.engine
+            self.engine = simulation.GuideWireEngine()
+            self.load_task(self.task_path, False)
+            self.now_step = 0
+            self.last_a_star = self.get_a_star_distance()
+            self.inial_a_star = self.last_a_star
+            return self.render()
+
+    def reset_soft_task(self, debug=False)->np.ndarray:
         # self.engine.clear_all()
         if self.iniallized:
             is_collision = detect_self_collision(self.engine.get_guide_pos_list(),

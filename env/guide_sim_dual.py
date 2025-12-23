@@ -144,6 +144,45 @@ def a_star(img_msk:np.ndarray, start, end):
     # 无路径
     return np.zeros_like(img_msk, dtype=np.uint8)
 
+class PointNormalLine:
+    def __init__(self, p0, n1, n2):
+        """
+        p0: (x0, y0)  直线上一点
+        n1, n2: (x1, y1), (x2, y2) 用两点定义法线方向
+        """
+        self.p0 = np.array(p0, dtype=np.float32)
+        n1 = np.array(n1, dtype=np.float32)
+        n2 = np.array(n2, dtype=np.float32)
+
+        self.n = n2 - n1
+        self.n = self.perp(self.n)
+        norm = np.linalg.norm(self.n)
+        if norm < 1e-6:
+            raise ValueError("法线方向两点不能重合")
+
+        self.n /= norm  # 归一化，方便数值稳定
+    
+    def point_side(self, p, eps=2):
+        """
+        判断点 p 在直线哪一侧
+        返回：
+          +1  -> 法线指向的一侧（约定为“右侧”）
+          -1  -> 法线反方向的一侧（约定为“左侧”）
+           0  -> 在直线上
+        """
+        p = np.array(p, dtype=np.float32)
+        s = np.dot(self.n, p - self.p0)
+
+        if s > eps:
+            return True
+        elif s < -eps:
+            return False
+        else:
+            return False
+    def perp(self, v):
+        # 逆时针旋转90°（如果你觉得左右反了，就换成 [v[1], -v[0]]）
+        return np.array([-v[1], v[0]], dtype=np.float32)
+
 def a_star_distance(a_star_path:np.ndarray):
     """
     得到两个点之间的A*距离
@@ -227,13 +266,21 @@ class GuidewireEnv():
         self._goal_rect_color = (255, 255, 255)
         self._goal_rect_width = 40
         self._goal_line_width = 4
-
+        self.iniallized = False
         self._now_json = None
         self.draw_options = None
         self.gray = True
 
         self.last_a_star = None
         self.inial_a_star = None
+        self.hyper_params.use_soft_task = False
+        
+        self.line = None
+        self.soft_task_force_reset_higher_limit = 8
+        self.soft_task_force_reset_lower_limit = 3
+        self.soft_task_force_reset_limit = random.randint(
+            self.soft_task_force_reset_lower_limit, self.soft_task_force_reset_higher_limit)
+        self.soft_task_force_reset_cnt = 0
 
     def load_task(self, task_path:str, file_reload=True):
         """加载任务"""
@@ -270,6 +317,8 @@ class GuidewireEnv():
             self.engine.set_guide_by_list(self.metadata.guide_pos_lst,
                                           self.metadata.radius,
                                           self._angle)
+        self.line = PointNormalLine(self.metadata.insert_pos, self.metadata.insert_pos, self.metadata.target_pos)
+        self.iniallized = True
 
     def create_base_guide(self):
         """创建基础导丝"""
@@ -336,7 +385,7 @@ class GuidewireEnv():
                 reward = math.log(self.inial_a_star / ( (reward_dis)**2 / self.inial_a_star + 1e-5) )
             else:
                 # 使用A*距离的差值作为密集奖励
-                reward = (self.last_a_star - reward_dis) * 10. / self.inial_a_star
+                reward = (self.last_a_star - reward_dis) / 45
                 reward = reward * 1.25 if reward < 0. else reward   # 远离终点时，会有额外的惩罚
 
         self.last_a_star = now_dis
@@ -404,15 +453,100 @@ class GuidewireEnv():
         return f"Metadata:\n{self.metadata}\nHyperParams:\n{self.hyper_params}"
     
     def reset(self)->np.ndarray:
-        # self.engine.clear_all()
-        del self.engine
-        self.engine = simulation.GuideWireEngine()
-        self.load_task(self.task_path, False)
+        if not self.hyper_params.use_soft_task:
+            del self.engine
+            self.engine = simulation.GuideWireEngine()
+            self.load_task(self.task_path, False)
+            self.now_step = 0
+            self.last_a_star = self.get_a_star_distance()
+            self.inial_a_star = self.last_a_star
+            return self.render()
+        else:
+            return self.reset_soft_task()
+
+    def sample_goal(self, dist):
+        """
+        以当前导丝的尖端坐标为圆心，dist为半径，随机生成一个点，作为新的目标点.
+        这个点必须位于MASK中的合法位置，否则重新采样，直到采样到合法的点。
+        """
+        # 最大采样次数，都失败的话就放弃采样
+        max_sample_times = 200
+        # 小于这个距离的点会被拒绝
+        rejection_min_dist = max(8*self.metadata.radius, dist*0.70)
+        # print(f"rejection_min_dist: {rejection_min_dist}")
+        h, w = self._mask_surf_np.shape
+
+        for i in range(max_sample_times):
+            pos = self.get_now_tip_pos()
+            # 逆高斯采样，即边缘的概率更高
+            pos = [pos[0] + (1-np.random.normal(0, dist)), pos[1] + (1-np.random.normal(0, dist))]
+            sampled_dist = l2_distance_square(pos, self.get_now_tip_pos())
+            # 如果采样到的坐标离圆心太近，则拒绝采样
+            if sampled_dist < rejection_min_dist**2:
+                continue
+            # 如果采样到的坐标在圆外，则依旧拒绝采样
+            if sampled_dist > dist**2:
+                continue
+            # 越界直接拒绝
+            x, y = int(pos[0]), int(pos[1])
+            if x < 0 or x >= w or y < 0 or y >= h:
+                continue
+            # 拒绝插入点背面区域
+            # if self.line.point_side(pos):
+            #     continue
+            if len(self.engine.balls) < 6:
+                if not self.line.point_side(pos[::-1]):
+                    # print(f"拒绝采样到背后的点 {pos}")
+                    continue
+            
+            a_star_path_np = a_star(self._mask_surf_np,
+                                    self.get_now_tip_pos(),
+                                    list(map(int, pos)))
+            sampled_dist_astar = a_star_distance(a_star_path_np)
+            # 拒绝直线距离近但是实际路程很远的点
+            if sampled_dist_astar / 2 > dist:
+                print(f"拒绝采样到距离太近的点 {sampled_dist_astar} / {dist}")
+                continue
+            if self._mask_surf_np[int(pos[0]), int(pos[1])] == 255:
+                # print(f"Sample goal: {l2_distance_square(pos, self.get_now_tip_pos()) ** 0.5}")
+                return pos[::-1]
+        else:
+            return None
+    def reset_soft_task(self, debug=False) -> np.ndarray:
+        if self.iniallized:
+            is_collision = detect_self_collision(self.engine.get_guide_pos_list(),
+                                                4.5*self.metadata.radius,
+                                                )
+            resampled_target = self.sample_goal(self.hyper_params.soft_task_dist)
+        else:
+            if debug:
+                print(f"not iniallized")
+            is_collision = False
+            resampled_target = None
+        if not is_collision and \
+            resampled_target is not None and \
+            self.soft_task_force_reset_cnt < self.soft_task_force_reset_limit:
+            
+            if debug:
+                print(f"is_collision {is_collision} resampled_target {resampled_target}")
+            self.set_now_target_pos(resampled_target)
+            self.soft_task_force_reset_cnt += 1
+        else:
+            self.soft_task_force_reset_cnt = 0
+            self.soft_task_force_reset_limit = random.randint(
+                self.soft_task_force_reset_lower_limit, self.soft_task_force_reset_higher_limit)
+            del self.engine
+            self.engine = simulation.GuideWireEngine()
+            self.load_task(self.task_path, False)
+            resampled_target = self.sample_goal(self.hyper_params.soft_task_dist)
+            if resampled_target is not None:
+                self.set_now_target_pos(resampled_target)
+            if debug:
+                print(f"reset all")
         self.now_step = 0
         self.last_a_star = self.get_a_star_distance()
         self.inial_a_star = self.last_a_star
         return self.render()
-
     def close(self)->None:
         ...
 
@@ -442,6 +576,15 @@ class GuidewireEnv():
     def get_now_target_pos(self) -> list:
         """获取目标点坐标"""
         return self.metadata.target_pos[::-1]
+
+    def set_now_target_pos(self, pos_like) -> list:
+        """获取目标点坐标"""
+        pos_like = list(map(int, pos_like))
+        self.metadata.target_pos = pos_like
+    
+    def set_soft_task_threashold(self, dist:float) -> None:
+        """设置软任务生成距离"""
+        self.hyper_params.soft_task_dist = dist
 
 
 if __name__ == "__main__":
