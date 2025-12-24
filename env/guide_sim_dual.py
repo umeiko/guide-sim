@@ -155,7 +155,7 @@ class PointNormalLine:
         n2 = np.array(n2, dtype=np.float32)
 
         self.n = n2 - n1
-        self.n = self.perp(self.n)
+        # self.n = self.perp(self.n)
         norm = np.linalg.norm(self.n)
         if norm < 1e-6:
             raise ValueError("法线方向两点不能重合")
@@ -206,6 +206,9 @@ def surf_to_ndarray(surf:pygame.Surface, alpha=False):
         frame_np = np.append(frame_np, alpha_np, axis=2)
         # frame_np = np.stack((frame_np, alpha_np), axis=2)
     if surf.get_bitsize() == 24:
+        frame_np = np.transpose(frame_np, (1, 0, 2))
+    else:
+        # print(f"frame_np shape before transpose: {frame_np.shape}")
         frame_np = np.transpose(frame_np, (1, 0, 2))
     return frame_np
 
@@ -317,7 +320,9 @@ class GuidewireEnv():
             self.engine.set_guide_by_list(self.metadata.guide_pos_lst,
                                           self.metadata.radius,
                                           self._angle)
-        self.line = PointNormalLine(self.metadata.insert_pos, self.metadata.insert_pos, self.metadata.target_pos)
+        self.line = PointNormalLine(self.metadata.insert_pos[::-1], 
+                                    self.metadata.insert_pos[::-1], 
+                                    self.metadata.target_pos[::-1])
         self.iniallized = True
 
     def create_base_guide(self):
@@ -366,13 +371,14 @@ class GuidewireEnv():
         is_collision = detect_self_collision(self.engine.get_guide_pos_list(),
                                               2.5*self.metadata.radius,
                                               )
-        if l2_is_done(pos_g_tip, pos_target, 4 * self.metadata.radius):
+        if l2_is_done(pos_g_tip, pos_target, 4.5 * self.metadata.radius):
             done = True
             now_dis = 4 * self.metadata.radius
             # reward = -math.log( l2_distance_square(pos_g_tip, pos_target) ** 0.5 * 0.001)
             # 成功到达终点之后的稀疏奖励
             # reward = -math.log( ( 4 * self.metadata.radius / self.inial_a_star)  * 0.05 + 0.0001)
-            reward = math.log(self.inial_a_star / ( now_dis**2 / self.inial_a_star + 1e-5) )
+            # reward = math.log(self.inial_a_star / ( now_dis**2 / self.inial_a_star + 1e-5) )
+            reward = 5
         else:
             d_penalty = 0
             if is_collision and action!=1: # 惩罚缠绕但是不执行导丝撤回的情况
@@ -445,6 +451,9 @@ class GuidewireEnv():
             if self.gray:
                 out = np.expand_dims(rgb_to_gray(out), axis=0)
                 out_reff = np.expand_dims(out_reff, axis=0)
+                # out = np.transpose(out, (0,2,1))
+                out_reff = np.transpose(out_reff, (0,2,1))
+                
             
             out = np.concatenate([out, out_reff], axis=0)
             return out
@@ -495,7 +504,7 @@ class GuidewireEnv():
             # if self.line.point_side(pos):
             #     continue
             if len(self.engine.balls) < 6:
-                if not self.line.point_side(pos[::-1]):
+                if not self.line.point_side(pos):
                     # print(f"拒绝采样到背后的点 {pos}")
                     continue
             

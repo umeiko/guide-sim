@@ -379,9 +379,9 @@ def main():
     losses = None
     best = 1e-99
     for epoch in range(last_epo+1, last_epo+hyper.num_epochs):
+        logging.info(f"=== Epoch {epoch} ===")
         states = se_mp.reset()
         start_time = time.time()
-        logging.info(f"=== Epoch {epoch} ===")
         with torch.no_grad():
             for _ in tqdm(range(hyper.max_steps+1)):
                 batch_a_tensor, batch_p_tensor, batch_v_tensor, _ = agent.batch_desision(states)

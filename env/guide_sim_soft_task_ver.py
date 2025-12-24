@@ -112,7 +112,7 @@ class PointNormalLine:
         n2 = np.array(n2, dtype=np.float32)
 
         self.n = n2 - n1
-        self.n = self.perp(self.n)
+        # self.n = self.perp(self.n)
         norm = np.linalg.norm(self.n)
         if norm < 1e-6:
             raise ValueError("法线方向两点不能重合")
@@ -122,10 +122,7 @@ class PointNormalLine:
     def point_side(self, p, eps=2):
         """
         判断点 p 在直线哪一侧
-        返回：
-          +1  -> 法线指向的一侧（约定为“右侧”）
-          -1  -> 法线反方向的一侧（约定为“左侧”）
-           0  -> 在直线上
+        返回：True 表示在直线的右侧，False 表示在直线的左侧
         """
         p = np.array(p, dtype=np.float32)
         s = np.dot(self.n, p - self.p0)
@@ -254,7 +251,7 @@ class GuidewireEnv():
         self.inial_a_star = None
         self.iniallized = False
         self.line = None
-        self.soft_task_force_reset_higher_limit = 8
+        self.soft_task_force_reset_higher_limit = 5
         self.soft_task_force_reset_lower_limit = 3
         self.soft_task_force_reset_limit = random.randint(
             self.soft_task_force_reset_lower_limit, self.soft_task_force_reset_higher_limit)
@@ -288,7 +285,9 @@ class GuidewireEnv():
             self.engine.set_guide_by_list(self.metadata.guide_pos_lst,
                                           self.metadata.radius,
                                           self._angle)
-        self.line = PointNormalLine(self.metadata.insert_pos, self.metadata.insert_pos, self.metadata.target_pos)
+        self.line = PointNormalLine(self.metadata.insert_pos[::-1]
+                                    , self.metadata.insert_pos[::-1], 
+                                    self.metadata.direct_pos[::-1])
         self.iniallized = True
 
     def create_base_guide(self):
@@ -415,7 +414,7 @@ class GuidewireEnv():
         return f"Metadata:\n{self.metadata}\nHyperParams:\n{self.hyper_params}"
     
 
-    def sample_goal(self, dist):
+    def sample_goal(self, dist, debug=False):
         """
         以当前导丝的尖端坐标为圆心，dist为半径，随机生成一个点，作为新的目标点.
         这个点必须位于MASK中的合法位置，否则重新采样，直到采样到合法的点。
@@ -437,20 +436,27 @@ class GuidewireEnv():
             sampled_dist = l2_distance_square(pos, self.get_now_tip_pos())
             # 如果采样到的坐标离圆心太近，则拒绝采样
             if sampled_dist < rejection_min_dist**2:
+                if debug:
+                    print(f"拒绝离圆心太近")
                 continue
             # 如果采样到的坐标在圆外，则依旧拒绝采样
             if sampled_dist > dist**2:
+                if debug:
+                    print(f"拒绝采样到圆外的点")
                 continue
             # 越界直接拒绝
             x, y = int(pos[0]), int(pos[1])
             if x < 0 or x >= w or y < 0 or y >= h:
+                if debug:
+                    print(f"拒绝越界 {pos}")
                 continue
             # 拒绝插入点背面区域
             # if self.line.point_side(pos):
             #     continue
             if len(self.engine.balls) < 6:
-                if not self.line.point_side(pos[::-1]):
-                    # print(f"拒绝采样到背后的点 {pos}")
+                if not self.line.point_side(pos):
+                    if debug:
+                        print(f"拒绝采样到背后的点 {pos}")
                     continue
             if self._mask_surf_np[int(pos[0]), int(pos[1])] == 255:
                 # print(f"Sample goal: {l2_distance_square(pos, self.get_now_tip_pos()) ** 0.5}")
@@ -475,7 +481,7 @@ class GuidewireEnv():
             is_collision = detect_self_collision(self.engine.get_guide_pos_list(),
                                                 4.5*self.metadata.radius,
                                                 )
-            resampled_target = self.sample_goal(self.hyper_params.soft_task_dist)
+            resampled_target = self.sample_goal(self.hyper_params.soft_task_dist, debug)
         else:
             if debug:
                 print(f"not iniallized")
@@ -496,11 +502,11 @@ class GuidewireEnv():
             del self.engine
             self.engine = simulation.GuideWireEngine()
             self.load_task(self.task_path, False)
-            resampled_target = self.sample_goal(self.hyper_params.soft_task_dist)
+            resampled_target = self.sample_goal(self.hyper_params.soft_task_dist, debug)
             if resampled_target is not None:
                 self.set_now_target_pos(resampled_target)
             if debug:
-                print(f"reset all")
+                print(f"is_collision:{is_collision}, resampled_target:{resampled_target}, soft_task_force_reset_cnt:{self.soft_task_force_reset_cnt}, reset all")
         self.now_step = 0
         self.last_a_star = self.get_a_star_distance()
         self.inial_a_star = self.last_a_star
