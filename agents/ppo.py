@@ -176,6 +176,7 @@ class Agent():
         self.optim_type = "adam"
         self.max_forward_batch = 32
         self.load_opt_weight = True
+        self.max_updates_per_iter = 200
     
     def set_hyperpara(self, hp:HyperParams):
         self.lr = hp.lr
@@ -189,6 +190,7 @@ class Agent():
         self.optim_type = hp.optim_type
         self.max_forward_batch = hp.max_forward_batch
         self.load_opt_weight = hp.load_opt_weight
+        self.max_updates_per_iter = getattr(hp, "max_updates_per_iter", 200)
 
     
     def plot_attrs(self):
@@ -313,9 +315,15 @@ class Agent():
         # print("s_batch",s_batch.shape) 2,512,512
         new_probs, values = self.ac_model(s_batch)
         # π(At|St, θ) / π_old(At|St, θ)  这个比例用来限制过大的策略更新，高效利用旧决策
-        ratio = torch.gather(new_probs, 1, a_batch)
-        ratio = ratio / old_probs_batch
-
+        # ratio = torch.gather(new_probs, 1, a_batch)
+        # ratio = ratio / old_probs_batch
+        
+        # 转换旧策略的概率为 log
+        old_logp_batch = torch.log(torch.clamp(old_probs_batch, min=1e-8))
+        new_prob_a = torch.gather(new_probs, 1, a_batch).clamp_min(1e-8)
+        new_logp = torch.log(new_prob_a)
+        ratio = torch.exp(new_logp - old_logp_batch)
+        
         surr1 = ratio * advantages_batch
         # 通过裁剪 π(At|St, θ) / π_old(At|St, θ) 到1的附近，限制过大的梯度更新，来自PPO论文
         surr2 = torch.clamp(ratio, 1.0 - self.epsilon, 1.0 + self.epsilon) * advantages_batch
@@ -342,7 +350,8 @@ class Agent():
         s, a, r, old_probs, value, gae, advantages,  = replaybuffer.get_needed_data()
         # print("s shape:", s.shape)
         avg_losses = [0,0,0,0]  # 将此次计算得到的平均损失输出用于记录
-        
+        # 【新增】 对优势进行归一化处理
+        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         s = torch.from_numpy(s).float().pin_memory()
         a = torch.from_numpy(a).unsqueeze(1).long().to(self.device) 
         gae = torch.from_numpy(gae).float().unsqueeze(-1).to(self.device) 
@@ -354,9 +363,13 @@ class Agent():
         epochs = self.exp_reuse_rate
         batch_size = self.batch_size
         N = len(s)
+
+        max_updates = getattr(self, "max_updates_per_iter", 200)
+
         self.ac_model.train()
         total_actor = total_critic = total_entropy = total_loss = 0.0
         total_batches = 0
+        updates = 0
         for epo in range(epochs):
             # 打乱索引
             indices = torch.randperm(N)
@@ -384,6 +397,12 @@ class Agent():
                 total_entropy += float(entropy_loss)
                 total_loss += float(loss)
                 total_batches += 1
+
+                updates += 1
+                if updates >= max_updates:
+                    break
+            if updates >= max_updates:
+                break
                 
         avg_losses = [
             total_actor / total_batches,

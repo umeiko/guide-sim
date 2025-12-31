@@ -279,8 +279,8 @@ class GuidewireEnv():
         self.hyper_params.use_soft_task = False
         
         self.line = None
-        self.soft_task_force_reset_higher_limit = 8
-        self.soft_task_force_reset_lower_limit = 3
+        self.soft_task_force_reset_higher_limit = 12
+        self.soft_task_force_reset_lower_limit = 5
         self.soft_task_force_reset_limit = random.randint(
             self.soft_task_force_reset_lower_limit, self.soft_task_force_reset_higher_limit)
         self.soft_task_force_reset_cnt = 0
@@ -322,7 +322,7 @@ class GuidewireEnv():
                                           self._angle)
         self.line = PointNormalLine(self.metadata.insert_pos[::-1], 
                                     self.metadata.insert_pos[::-1], 
-                                    self.metadata.target_pos[::-1])
+                                    self.metadata.direct_pos[::-1])
         self.iniallized = True
 
     def create_base_guide(self):
@@ -513,9 +513,9 @@ class GuidewireEnv():
                                     list(map(int, pos)))
             sampled_dist_astar = a_star_distance(a_star_path_np)
             # 拒绝直线距离近但是实际路程很远的点
-            if sampled_dist_astar / 2 > dist:
-                print(f"拒绝采样到距离太近的点 {sampled_dist_astar} / {dist}")
-                continue
+            # if sampled_dist_astar / 2 > dist:
+            #     # print(f"拒绝采样到距离太近的点 {sampled_dist_astar} / {dist}")
+            #     continue
             if self._mask_surf_np[int(pos[0]), int(pos[1])] == 255:
                 # print(f"Sample goal: {l2_distance_square(pos, self.get_now_tip_pos()) ** 0.5}")
                 return pos[::-1]

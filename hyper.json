@@ -27,5 +27,6 @@
     "task_name": "task_soft3.0_resnet18_vit16_mp",
     "A*DenseReward" : true,
     "L2DenseReward" : false,
-    "soft_task_dist" : 85
+    "soft_task_dist" : 85,
+    "max_updates_per_iter" : 1e99
 }

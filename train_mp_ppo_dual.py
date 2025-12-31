@@ -357,11 +357,12 @@ def main():
 
     hyper = HyperParams()
     hyper.load_from_json("./hyper_dual.json")
-    hyper.print_hyper()
+    
     # 设置日志模块
     os.makedirs("./logs", exist_ok=True)
     logging.basicConfig(filename=f'./logs/{current_time}_{hyper.task_name}.log',
                         level=logging.INFO,format=log_format)
+    hyper.print_hyper()
     writer = SummaryWriter(log_dir=f'./logs/{hyper.task_name}')
     dataset_path = hyper.task_folder_path
     tasks = os.listdir(os.path.join(dataset_path, "task"))

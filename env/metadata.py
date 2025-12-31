@@ -85,6 +85,7 @@ class HyperParams(BaseMetadata):
         self.c_coef = 1.0
         self.exp_reuse_rate = 10
         self.load_opt_weight= True
+        self.max_updates_per_iter = 200
         # trainer_hyper
         self.plot_interval = 10
         self.save_interval = 50
